@@ -47,7 +47,7 @@ def landmark_detection(pose, landmarks, std=MESAUREMENT_STD):
     measurement_covs = np.zeros((landmarks.shape[0], 2, 2))
 
     for l in range(landmarks.shape[0]):
-        measurements[l], measurement_covs[l] = compute_measurement(pose, landmarks[l], MESAUREMENT_STD)
+        measurements[l], measurement_covs[l] = compute_measurement(pose, landmarks[l], std)
 
     return measurements, measurement_covs
 
