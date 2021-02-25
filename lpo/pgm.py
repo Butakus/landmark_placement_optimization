@@ -25,11 +25,19 @@ def check_file_type(pgm_filename):
     """ Check if the pgm file data is ascii (P2) or binary (P5) encoded
         Return the type as a string.
     """
-    with open(pgm_filename, 'r') as pgm_file:
-        data_type = read_line(pgm_file)
-        if data_type != 'P2' and data_type != 'P5':
-            raise ValueError("PGM file type must be P2 or P5")
-        return data_type
+    try:
+        with open(pgm_filename, 'r') as pgm_file:
+            data_type = read_line(pgm_file)
+            if data_type != 'P2' and data_type != 'P5':
+                raise ValueError("PGM file type must be P2 or P5")
+            return data_type
+    except UnicodeDecodeError:
+        # File is binary
+        with open(pgm_filename, 'rb') as pgm_file:
+            data_type = read_line(pgm_file)
+            if data_type != 'P5':
+                raise ValueError("Found binary file which is NOT P5")
+            return data_type
 
 def read_ascii_data(pgm_file, data):
     """ Read the P2 data and fill the numpy array """
@@ -80,7 +88,8 @@ def read_pgm(pgm_filename):
 
 
 if __name__ == '__main__':
-    data = read_pgm("/home/butakus/localization_reference/gazebo/map.pgm")
+    data = read_pgm("/home/butakus/localization_reference/gazebo/map_2p0.pgm")
+    print(data.shape)
     print(data)
     plt.imshow(data)
     plt.show()
