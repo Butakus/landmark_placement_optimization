@@ -19,8 +19,7 @@ def compute_measurement(pose, landmark, std=MESAUREMENT_STD):
         Output: A tuple, containing the measurement (a 2D array) and the covariance (2x2 matrix).
     """
     # Build measurement covariance matrix
-    measurement_cov = np.zeros((2, 2))
-    np.fill_diagonal(measurement_cov, std**2)
+    measurement_cov = np.eye(2) * std**2
 
     # Convert the landmark pose to a SE(3) matrix
     landmark_se3 = lie.se3(t=landmark)
@@ -29,7 +28,8 @@ def compute_measurement(pose, landmark, std=MESAUREMENT_STD):
     measurement = lie.relative_se3(pose, landmark_se3)
 
     # Add gaussian noise
-    measurement[:2, 3] += np.random.multivariate_normal(np.zeros(2), measurement_cov)
+    if std > 0.0:
+        measurement[:2, 3] += np.random.multivariate_normal(np.zeros(2), measurement_cov)
 
     return measurement, measurement_cov
 
@@ -43,8 +43,8 @@ def landmark_detection(pose, landmarks, std=MESAUREMENT_STD):
             - Measurements: Array of SE(3) matrices.
             - Measurement covariances: Array of 2x2 matrices.
     """
-    measurements = np.zeros((landmarks.shape[0], 4, 4))
-    measurement_covs = np.zeros((landmarks.shape[0], 2, 2))
+    measurements = np.empty((landmarks.shape[0], 4, 4))
+    measurement_covs = np.empty((landmarks.shape[0], 2, 2))
 
     for l in range(landmarks.shape[0]):
         measurements[l], measurement_covs[l] = compute_measurement(pose, landmarks[l], std)
