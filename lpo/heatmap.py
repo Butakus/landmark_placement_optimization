@@ -3,11 +3,11 @@
 """ TODO: docstring """
 
 from time import time
-import ctypes
 import multiprocessing as mp
-from multiprocessing.sharedctypes import RawArray
 
 import numpy as np
+# Set numpy random seed
+np.random.seed(42)
 from matplotlib import pyplot as plt
 
 from tqdm import tqdm
@@ -16,9 +16,10 @@ import pgm
 import metrics
 import nlls
 import lie_algebra as lie
-from landmark_detection import landmark_detection
+from landmark_detection import landmark_detection, filter_landmarks
 
 landmarks = np.array([
+    [5.0, 40.0, 0.0],
     [40.0, 50.0, 0.0],
     [55.0, 25.0, 0.0],
     [65.0, 55.0, 0.0],
@@ -28,8 +29,8 @@ landmarks = np.array([
     [125.0, 23.0, 0.0],
 ])
 
-map_file = "/home/butakus/localization_reference/gazebo/map_0p5.pgm"
-resolution = 0.5
+map_file = "/home/butakus/localization_reference/gazebo/map_2p0.pgm"
+resolution = 2.0
 
 
 def map_gdop(map_data):
@@ -41,7 +42,7 @@ def map_gdop(map_data):
                 cell_pose = lie.se3(t=[i * resolution, j * resolution, 0.0], r=lie.so3_from_rpy([0.0, 0.0, 0.0]))
                 measurements, measurement_covs = landmark_detection(cell_pose, landmarks, std=0.001)
                 try:
-                    gdop_map[i][j] = wgdop.compute_gdop(measurements)
+                    gdop_map[i][j] = metrics.compute_gdop(measurements)
                     if gdop_map[i][j] > 250.0:# or np.isnan(gdop_map[i][j]):
                         # print("WWWW!!!")
                         # print("Cell: {}".format(cell_pose))
@@ -51,73 +52,6 @@ def map_gdop(map_data):
                     gdop_map[i][j] = 250.0
     return gdop_map
 
-def map_mcmc(map_data):
-    mcmc_map = np.zeros(map_data.shape)
-    for i in tqdm(range(map_data.shape[0])):
-        for j in range(map_data.shape[1]):
-            # Only map the area if it is drivable
-            if map_data[i, j] == 255:
-                cell_t = [i * resolution, j * resolution, 0.0]
-                cell_pose = lie.se3(t=cell_t, r=lie.so3_from_rpy([0.0, 0.0, 0.0]))
-                measurements, measurement_covs = landmark_detection(cell_pose, landmarks, std=0.01)
-                nlls_result = nlls.nlls_estimation(args=(landmarks, measurements, measurement_covs),
-                                                   initial_guess=None, output=False)
-                emcee_result = nlls.mcmc_posterior_estimation(params=nlls_result.params,
-                                     args=(landmarks, measurements, measurement_covs),
-                                     output=False)
-                mcmc_map[i][j] = emcee_result.params['x'].stderr + emcee_result.params['y'].stderr
-    return mcmc_map
-
-
-def map_nlls(map_data):
-    nlls_map = np.zeros(map_data.shape)
-    for i in tqdm(range(map_data.shape[0])):
-        for j in range(map_data.shape[1]):
-            # Only map the area if it is drivable
-            if map_data[i, j] == 255:
-                cell_t = [i * resolution, j * resolution, 0.0]
-                cell_pose = lie.se3(t=cell_t, r=lie.so3_from_rpy([0.0, 0.0, 0.0]))
-                measurements, measurement_covs = landmark_detection(cell_pose, landmarks, std=0.01)
-                nlls_result = nlls.nlls_estimation(args=(landmarks, measurements, measurement_covs),
-                                                   initial_guess=cell_t, output=False)
-                nlls_map[i][j] = nlls_result.params['x'].stderr + nlls_result.params['y'].stderr
-    return nlls_map
-
-# def nlls_metric(i, j):
-#     cell_t = [i * resolution, j * resolution, 0.0]
-#     cell_pose = lie.se3(t=cell_t, r=lie.so3_from_rpy([0.0, 0.0, 0.0]))
-#     measurements, measurement_covs = landmark_detection(cell_pose, landmarks, std=0.01)
-#     nlls_result = nlls.nlls_estimation(args=(landmarks, measurements, measurement_covs),
-#                                        initial_guess=cell_t, output=False)
-#     std_x = nlls_result.params['x'].stderr
-#     std_y = nlls_result.params['y'].stderr
-#     # return std_x + std_y
-#     return np.sqrt(std_x**2 + std_y**2)
-
-# def mcmc_metric(i, j):
-#     cell_t = [i * resolution, j * resolution, 0.0]
-#     cell_pose = lie.se3(t=cell_t, r=lie.so3_from_rpy([0.0, 0.0, 0.0]))
-#     measurements, measurement_covs = landmark_detection(cell_pose, landmarks, std=0.01)
-#     nlls_result = nlls.nlls_estimation(args=(landmarks, measurements, measurement_covs),
-#                                        initial_guess=None, output=False)
-#     emcee_result = nlls.mcmc_posterior_estimation(params=nlls_result.params,
-#                                              args=(landmarks, measurements, measurement_covs),
-#                                              output=False)
-#     std_x = emcee_result.params['x'].stderr
-#     std_y = emcee_result.params['y'].stderr
-#     # return std_x + std_y
-#     return np.sqrt(std_x**2 + std_y**2)
-
-def build_heatmap(map_data, metric):
-    """ TODO: docstring """
-    heatmap = np.zeros(map_data.shape)
-    for i in tqdm(range(map_data.shape[0])):
-        for j in range(map_data.shape[1]):
-            # Only map the area if it is drivable
-            if map_data[i, j] == 255:
-                heatmap[i][j] = metric(i, j)
-    return heatmap
-
 def test_gdop(x, y):
     X = np.array([x, y, 0.0])
     print("X: {}".format(X))
@@ -125,7 +59,7 @@ def test_gdop(x, y):
     # Get the landmark measurements
     X_se3 = lie.se3(t=[X[0], X[1], 0.0], r=lie.so3_from_rpy([0.0, 0.0, X[2]]))
     measurements, measurement_covs = landmark_detection(X_se3, landmarks, std=0.0)
-    cell_gdop = wgdop.compute_gdop(measurements)
+    cell_gdop = metrics.compute_gdop(measurements)
     return cell_gdop
 
 
@@ -135,7 +69,6 @@ class Heatmap(object):
         super(Heatmap, self).__init__()
         self.map_data = map_data
         self.heatmap = np.zeros(self.map_data.shape)
-        # self.shared_heatmap = RawArray(ctypes.c_double, self.map_data.shape[0] * self.map_data.shape[1])
         self.metrics = {
             'nlls': self.nlls_metric,
             'mcmc': self.mcmc_metric,
@@ -143,25 +76,18 @@ class Heatmap(object):
         self.results = []
 
     def add_async_result(self, result):
-        # self.results.append(result)
         i, j, val = result
-        # shared_heatmap_np = np.frombuffer(self.shared_heatmap,dtype=np.float64).reshape(self.heatmap.shape)
-        # shared_heatmap_np[i, j] = val
         self.heatmap[i, j] = val
 
     def compute_heatmap(self, metric):
         metric_f = self.metrics[metric]
-        # pool = mp.Pool(1)
         pool = mp.Pool(mp.cpu_count())
-        # heatmap = np.zeros(self.map_data.shape)
         t0 = time()
         for i in range(self.map_data.shape[0]):
             for j in range(self.map_data.shape[1]):
                 # Only map the area if it is drivable
                 if self.map_data[i, j] == 255:
                     pool.apply_async(metric_f, args=(i, j), callback=self.add_async_result)
-                    # async_result = pool.apply_async(metric_f, args=(i, j))
-                    # heatmap[i, j] = async_result.get()[2]
 
         print("Computing heatmap...")
         pool.close()
@@ -169,37 +95,81 @@ class Heatmap(object):
 
         t1 = time()
         print("Heatmap build time: {}".format(t1 - t0))
-        # self.heatmap = np.frombuffer(self.shared_heatmap,dtype=np.float64).reshape(self.heatmap.shape)
-
-        # for (i, j, val) in self.results:
-        #     heatmap[i, j] = val
 
         return self.heatmap
 
 
     def nlls_metric(self, i, j):
-        cell_t = [i * resolution, j * resolution, 0.0]
-        cell_pose = lie.se3(t=cell_t, r=lie.so3_from_rpy([0.0, 0.0, 0.0]))
-        measurements, measurement_covs = landmark_detection(cell_pose, landmarks, std=0.01)
-        nlls_result = nlls.nlls_estimation(args=(landmarks, measurements, measurement_covs),
-                                           initial_guess=cell_t, output=False)
-        std_x = nlls_result.params['x'].stderr
-        std_y = nlls_result.params['y'].stderr
-        # return std_x + std_y
-        return (i, j, np.sqrt(std_x**2 + std_y**2))
+        cell_t = np.array([i * resolution, j * resolution, np.pi/2])
+        cell_pose = lie.se3(t=cell_t, r=lie.so3_from_rpy([0.0, 0.0, cell_t[2]]))
+        # Get the subset of landmarks that are in range from the current cell
+        filtered_landmarks = filter_landmarks(landmarks, cell_pose)
+        if filtered_landmarks.shape[0] < 3:
+            # Insufficient number of landmarks in range to solve the NLLS problem
+            print("WARNING: Not enough landmarks in range!! Cell: {}".format(cell_t))
+            return (i, j, np.inf)
+
+        N = 50 # Take N samples to make it more robust
+
+        x = np.zeros(N)
+        y = np.zeros(N)
+
+        for n in range(N):
+            measurements, measurement_covs = landmark_detection(cell_pose, filtered_landmarks, std=0.01)
+            initial_guess = cell_t.copy()
+            initial_guess[:2] += np.random.normal(0.0, 1.0, 2)
+            initial_guess[2] += np.random.normal(0.0, 0.2)
+            nlls_result = nlls.nlls_estimation(args=(filtered_landmarks, measurements, measurement_covs),
+                                               initial_guess=initial_guess, output=False)
+            x[n] = nlls_result.params['x']
+            y[n] = nlls_result.params['y']
+
+        std_x = np.std(x)
+        std_y = np.std(y)
+
+        filt_x = []
+        filt_y = []
+        eps = 100 * np.finfo(type(std_x)).eps
+        for n in range(N):
+            dx = abs(x[n] - cell_t[0])
+            dy = abs(y[n] - cell_t[1])
+            if (std_x < eps or dx <= 3*std_x) and (std_y < eps or dy <= 3*std_y):
+                filt_x.append(x[n])
+                filt_y.append(y[n])
+        filt_x = np.array(filt_x)
+        filt_y = np.array(filt_y)
+
+        std_x = np.std(filt_x)
+        std_y = np.std(filt_y)
+
+        error = np.sqrt(std_x**2 + std_y**2)
+
+        return (i, j, error)
 
     def mcmc_metric(self, i, j):
-        cell_t = [i * resolution, j * resolution, 0.0]
-        cell_pose = lie.se3(t=cell_t, r=lie.so3_from_rpy([0.0, 0.0, 0.0]))
-        measurements, measurement_covs = landmark_detection(cell_pose, landmarks, std=0.01)
-        nlls_result = nlls.nlls_estimation(args=(landmarks, measurements, measurement_covs),
-                                           initial_guess=None, output=False)
-        emcee_result = nlls.mcmc_posterior_estimation(params=nlls_result.params,
-                                                 args=(landmarks, measurements, measurement_covs),
+        cell_t = np.array([i * resolution, j * resolution, np.pi/2])
+        cell_pose = lie.se3(t=cell_t, r=lie.so3_from_rpy([0.0, 0.0, cell_t[2]]))
+        # Get the subset of landmarks that are in range from the current cell
+        filtered_landmarks = filter_landmarks(landmarks, cell_pose)
+        if filtered_landmarks.shape[0] < 3:
+            # Insufficient number of landmarks in range to solve the NLLS problem
+            print("WARNING: Not enough landmarks in range!! Cell: {}".format(cell_t))
+            return (i, j, np.inf)
+
+        measurements, measurement_covs = landmark_detection(cell_pose, filtered_landmarks, std=0.01)
+
+        initial_guess = cell_t.copy()
+        initial_guess[:2] += np.random.normal(0.0, 1.0, 2)
+        initial_guess[2] += np.random.normal(0.0, 0.2)
+
+        # Sometimes problem here. It is raising exception or something
+        nlls_result = nlls.nlls_estimation(args=(filtered_landmarks, measurements, measurement_covs),
+                                           initial_guess=initial_guess, output=False)
+        emcee_result = nlls.mcmc_posterior_estimation(params=nlls_result.params, steps=3000,
+                                                 args=(filtered_landmarks, measurements, measurement_covs),
                                                  output=False)
         std_x = emcee_result.params['x'].stderr
         std_y = emcee_result.params['y'].stderr
-        # return std_x + std_y
         return (i, j, np.sqrt(std_x**2 + std_y**2))
 
 
@@ -213,6 +183,8 @@ if __name__ == '__main__':
     print("resolution: {}".format(resolution))
     print("width: {}".format(width))
     print("height: {}".format(height))
+    print("Map cells: {}".format(width*height))
+    print("Map free cells: {}".format(np.count_nonzero(map_data)))
 
     # Transpose the map data matrix because imshow will treat it
     # as an image and use the first dimension as the Y axis (rows)
@@ -238,23 +210,27 @@ if __name__ == '__main__':
     # plt.hist(gdop_map)
     # plt.figure()
     # plt.imshow(gdop_map, cmap='viridis', origin='lower')
+    # plt.show()
+    # exit()
 
     # Compute NLLS posterior:
-    # heatmap = build_heatmap(map_data, metric=nlls_metric)
     heatmap_gen = Heatmap(map_data)
-    heatmap = heatmap_gen.compute_heatmap(metric='mcmc')
+    heatmap = heatmap_gen.compute_heatmap(metric='nlls')
 
     print(heatmap)
+
     print("heatmap mean: {}".format(np.mean(heatmap)))
     print("heatmap max: {}".format(np.max(heatmap)))
+    if np.max(heatmap) > 0.0:
+        print("heatmap average: {}".format(np.average(heatmap, weights=(heatmap > 0))))
 
     # Create a mask to dislpay the DGOP on top of the map and transpose for displaying
-    heatmap_masked = np.ma.masked_where(heatmap == 0, heatmap).transpose()
-    plt.imshow(heatmap_masked, 'viridis', interpolation='none', alpha=1.0)
+    heatmap_masked = np.ma.masked_where(map_data == 0, heatmap).transpose()
+    plt.imshow(heatmap_masked, 'viridis', interpolation='none', alpha=1.0, origin='lower')
     plt.colorbar()
 
     # plt.figure()
-    # plt.hist(heatmap)
+    # plt.hist(heatmap_masked)
     # plt.figure()
     # plt.imshow(heatmap, cmap='viridis', origin='lower')
 

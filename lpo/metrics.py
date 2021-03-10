@@ -3,6 +3,7 @@
 """ TODO: docstring """
 
 import numpy as np
+# np.random.seed(1)
 
 import lie_algebra as lie
 from landmark_detection import landmark_detection
@@ -14,8 +15,8 @@ landmarks = np.array([
     # [1.0, -10.0, 0.0],
     [-5.0, 5.0, 0.0],
     [5.0, 5.0, 0.0],
-    [5.0, -5.0, 0.0],
-    [-5.0, -5.0, 0.0],
+    # [5.0, -5.0, 0.0],
+    # [-5.0, -5.0, 0.0],
 
     # [0.0, 0.0, 0.0],
     # [-2.0, 2.0, 0.0],
@@ -24,7 +25,8 @@ landmarks = np.array([
     # [-2.0, -2.0, 0.0],
     [-2.0, 8.0, 0.0],
 ])
-
+# Add randomness to landmark location to avoid alignments
+landmarks[:, :2] += np.random.normal(0.0, 1.0, (landmarks.shape[0], 2))
 
 
 def compute_gdop(measurements):
@@ -41,14 +43,14 @@ def compute_gdop(measurements):
         H[m, 2] = dz / r
         H[m, 3] = 1.0
     H_t = H.transpose()
-    # print("H:\n{}".format(H))
-    # print("H_t:\n{}".format(H_t))
-    # print("H·H_t:\n{}".format(H.dot(H_t)))
+    print("H:\n{}".format(H))
+    print("H_t:\n{}".format(H_t))
+    print("H·H_t:\n{}".format(H.dot(H_t)))
 
     # Matrix inversion method
     # Covariance matrix
     Q = np.linalg.inv(H.dot(H_t))    
-    # print("Q:\n{}".format(Q))
+    print("Q:\n{}".format(Q))
     gdop = np.sqrt(np.trace(Q))
 
     # Weird method
@@ -66,7 +68,33 @@ def compute_gdop(measurements):
 
     # gdop = np.sqrt((16 + b + c) / (a + b + 2*c))
 
-    # print("gdop:\n{}".format(gdop))
+    print("gdop:\n{}".format(gdop))
+    return gdop
+
+def compute_gdop_2d(measurements):
+    """ TODO: docstring """
+    # Geometry (LOS) matrix
+    H = np.empty((measurements.shape[0], 3))
+    for m in range(measurements.shape[0]):
+        dx = - measurements[m, 0, 3]
+        dy = - measurements[m, 1, 3]
+        r = np.sqrt(dx**2 + dy**2)
+        H[m, 0] = dx / r
+        H[m, 1] = dy / r
+        H[m, 2] = 1.0
+    H_t = H.transpose()
+    print("H:\n{}".format(H))
+    print("H_t:\n{}".format(H_t))
+    # print("H·H_t:\n{}".format(H.dot(H_t)))
+    print("H_t·H:\n{}".format(H_t.dot(H)))
+
+    # Matrix inversion method
+    # Covariance matrix
+    Q = np.linalg.inv(H.dot(H_t))    
+    print("Q:\n{}".format(Q))
+    gdop = np.sqrt(np.trace(Q))
+
+    print("gdop:\n{}".format(gdop))
     return gdop
 
 def compute_wgdop(measurements, measurement_covs):
@@ -99,12 +127,16 @@ def compute_crlb(measurements, measurement_covs):
 
 
 if __name__ == '__main__':
-    X = np.array([2.0, 1.0, 0.0])
+    X = np.array([2.0, 3.0, 0.0])
+    X[:2] += np.random.normal(0.0, 0.2, 2)
     print("X: {}".format(X))
+    print("Landmarks:\n{}".format(landmarks))
 
     # Get the landmark measurements
     X_se3 = lie.se3(t=[X[0], X[1], 0.0], r=lie.so3_from_rpy([0.0, 0.0, X[2]]))
     measurements, measurement_covs = landmark_detection(X_se3, landmarks, std=0.1)
-    # gdop = compute_gdop(measurements)
+    print("measurements:\n{}".format(measurements))
+    print("measurement_covs:\n{}".format(measurement_covs))
+    gdop = compute_gdop_2d(measurements)
     print(measurement_covs[0])
-    crlb = compute_crlb(measurements, measurement_covs)
+    # crlb = compute_crlb(measurements, measurement_covs)

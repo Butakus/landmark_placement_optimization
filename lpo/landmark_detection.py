@@ -9,6 +9,14 @@ import lie_algebra as lie
 # TODO: Find a better way to setup this 
 MESAUREMENT_STD = 0.01
 
+MAX_RANGE = 60.0
+# MAX_RANGE = np.inf
+
+def distance(pose, landmark):
+    """ Compute the euclidean distance between 2 SE(3) poses """
+    diff = landmark - pose[:3, 3]
+    return np.sqrt(diff[0]**2 + diff[1]**2 + diff[2]**2)
+
 def compute_measurement(pose, landmark, std=MESAUREMENT_STD):
     """ Compute the measurement between pose_1 and pose_2.
         Add a gaussian noise in x and y coordinates with the given std.
@@ -33,12 +41,21 @@ def compute_measurement(pose, landmark, std=MESAUREMENT_STD):
 
     return measurement, measurement_cov
 
+def filter_landmarks(landmarks, pose, max_range=MAX_RANGE):
+    """ Get the subset of landmarks that can be ranged from the given pose """
+    filtered_landmarks = []
+    for l in range(landmarks.shape[0]):
+        if distance(pose, landmarks[l]) < max_range:
+            filtered_landmarks.append(landmarks[l])
+    return np.array(filtered_landmarks)
+
 
 def landmark_detection(pose, landmarks, std=MESAUREMENT_STD):
     """ Compute a measurement from the origin pose to each of the landmarks.
         Inputs:
             - pose: SE(3) matrix containing the 6DOF position of the origin.
             - landmarks: numpy matrix containing the 3D position (x, y, z) of each landmark (Nx3).
+            - std: Standard deviation of the gaussian noise added in x and y axis.
         Outputs (tuple):
             - Measurements: Array of SE(3) matrices.
             - Measurement covariances: Array of 2x2 matrices.
@@ -48,7 +65,6 @@ def landmark_detection(pose, landmarks, std=MESAUREMENT_STD):
 
     for l in range(landmarks.shape[0]):
         measurements[l], measurement_covs[l] = compute_measurement(pose, landmarks[l], std)
-
     return measurements, measurement_covs
 
 if __name__ == '__main__':

@@ -1,3 +1,5 @@
 numpy
 matplotlib
 lmfit
+tqdm
+corner
