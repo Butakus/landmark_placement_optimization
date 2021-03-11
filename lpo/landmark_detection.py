@@ -13,9 +13,27 @@ MAX_RANGE = 60.0
 # MAX_RANGE = np.inf
 
 def distance(pose, landmark):
-    """ Compute the euclidean distance between 2 SE(3) poses """
+    """ Compute the euclidean distance between an SE(3) pose and a landmark (3D array) """
     diff = landmark - pose[:3, 3]
     return np.sqrt(diff[0]**2 + diff[1]**2 + diff[2]**2)
+
+# def distance_2d(pose, landmark):
+#     """ Compute the euclidean distance between an SE(3) pose and a landmark (2D array) """
+#     diff = landmark - pose[:2, 3]
+#     return np.sqrt(diff[0]**2 + diff[1]**2)
+
+def increase_range_error(std, distance):
+    """ Increase the std of the measurement noise based on the distance to the landmark.
+        The std will stay constant the first 10m.
+        Then, it will linearly increase up to 3*std at MAX_RANGE.
+    """
+    std_out = std
+    # Linear from 10 to MAX_RANGE
+    if distance > 10:
+        std_out = (2 * ((distance - 10) / (MAX_RANGE - 10)) + 1) * std
+    # Linear addition with distance without limits
+    # std_out = std + (0.01 * distance)
+    return std_out
 
 def compute_measurement(pose, landmark, std=MESAUREMENT_STD):
     """ Compute the measurement between pose_1 and pose_2.
@@ -26,6 +44,9 @@ def compute_measurement(pose, landmark, std=MESAUREMENT_STD):
             - std: Standard deviation of the gaussian noise added in x and y axis.
         Output: A tuple, containing the measurement (a 2D array) and the covariance (2x2 matrix).
     """
+
+    # Compute std depending on the distance to the landmark
+    std = increase_range_error(std, distance(pose, landmark))
     # Build measurement covariance matrix
     measurement_cov = np.eye(2) * std**2
 

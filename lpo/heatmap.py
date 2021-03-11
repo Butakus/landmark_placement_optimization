@@ -29,8 +29,8 @@ landmarks = np.array([
     [125.0, 23.0, 0.0],
 ])
 
-map_file = "/home/butakus/localization_reference/gazebo/map_2p0.pgm"
-resolution = 2.0
+map_file = "/home/butakus/localization_reference/gazebo/map_5p0.pgm"
+resolution = 5.0
 
 
 def map_gdop(map_data):
