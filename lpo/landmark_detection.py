@@ -7,9 +7,9 @@ import numpy as np
 import lie_algebra as lie
 
 # TODO: Find a better way to setup this 
-MESAUREMENT_STD = 0.01
+MESAUREMENT_STD = 0.05
 
-MAX_RANGE = 60.0
+MAX_RANGE = 30.0
 # MAX_RANGE = np.inf
 
 def distance(pose, landmark):

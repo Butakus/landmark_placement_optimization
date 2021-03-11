@@ -9,7 +9,7 @@ import multiprocessing as mp
 
 import numpy as np
 # Set numpy random seed
-np.random.seed(42)
+# np.random.seed(42)
 
 import lmfit
 import matplotlib.pyplot as plt

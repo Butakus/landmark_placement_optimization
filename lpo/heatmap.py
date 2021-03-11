@@ -7,7 +7,7 @@ import multiprocessing as mp
 
 import numpy as np
 # Set numpy random seed
-np.random.seed(42)
+# np.random.seed(42)
 from matplotlib import pyplot as plt
 
 from tqdm import tqdm
@@ -28,9 +28,10 @@ landmarks = np.array([
     [120.0, 60.0, 0.0],
     [125.0, 23.0, 0.0],
 ])
+# landmarks = np.load("landmarks.npy")
 
-map_file = "/home/butakus/localization_reference/gazebo/map_5p0.pgm"
-resolution = 5.0
+map_file = "/home/butakus/localization_reference/gazebo/map_2p0.pgm"
+resolution = 2.0
 
 
 def map_gdop(map_data):
@@ -65,21 +66,24 @@ def test_gdop(x, y):
 
 class Heatmap(object):
     """ TODO: docstring for Heatmap """
-    def __init__(self, map_data):
+    def __init__(self, map_data, resolution):
         super(Heatmap, self).__init__()
         self.map_data = map_data
+        self.resolution = resolution
         self.heatmap = np.zeros(self.map_data.shape)
         self.metrics = {
             'nlls': self.nlls_metric,
             'mcmc': self.mcmc_metric,
         }
         self.results = []
+        self.landmarks = landmarks
 
     def add_async_result(self, result):
         i, j, val = result
         self.heatmap[i, j] = val
 
-    def compute_heatmap(self, metric):
+    def compute_heatmap(self, landmarks, metric):
+        self.landmarks = landmarks
         metric_f = self.metrics[metric]
         pool = mp.Pool(mp.cpu_count())
         t0 = time()
@@ -100,10 +104,10 @@ class Heatmap(object):
 
 
     def nlls_metric(self, i, j):
-        cell_t = np.array([i * resolution, j * resolution, np.pi/2])
+        cell_t = np.array([i * self.resolution, j * self.resolution, np.pi/2])
         cell_pose = lie.se3(t=cell_t, r=lie.so3_from_rpy([0.0, 0.0, cell_t[2]]))
         # Get the subset of landmarks that are in range from the current cell
-        filtered_landmarks = filter_landmarks(landmarks, cell_pose)
+        filtered_landmarks = filter_landmarks(self.landmarks, cell_pose)
         if filtered_landmarks.shape[0] < 3:
             # Insufficient number of landmarks in range to solve the NLLS problem
             print("WARNING: Not enough landmarks in range!! Cell: {}".format(cell_t))
@@ -115,7 +119,7 @@ class Heatmap(object):
         y = np.zeros(N)
 
         for n in range(N):
-            measurements, measurement_covs = landmark_detection(cell_pose, filtered_landmarks, std=0.01)
+            measurements, measurement_covs = landmark_detection(cell_pose, filtered_landmarks, std=0.05)
             initial_guess = cell_t.copy()
             initial_guess[:2] += np.random.normal(0.0, 1.0, 2)
             initial_guess[2] += np.random.normal(0.0, 0.2)
@@ -147,10 +151,10 @@ class Heatmap(object):
         return (i, j, error)
 
     def mcmc_metric(self, i, j):
-        cell_t = np.array([i * resolution, j * resolution, np.pi/2])
+        cell_t = np.array([i * self.resolution, j * self.resolution, np.pi/2])
         cell_pose = lie.se3(t=cell_t, r=lie.so3_from_rpy([0.0, 0.0, cell_t[2]]))
         # Get the subset of landmarks that are in range from the current cell
-        filtered_landmarks = filter_landmarks(landmarks, cell_pose)
+        filtered_landmarks = filter_landmarks(self.landmarks, cell_pose)
         if filtered_landmarks.shape[0] < 3:
             # Insufficient number of landmarks in range to solve the NLLS problem
             print("WARNING: Not enough landmarks in range!! Cell: {}".format(cell_t))
@@ -214,8 +218,8 @@ if __name__ == '__main__':
     # exit()
 
     # Compute NLLS posterior:
-    heatmap_gen = Heatmap(map_data)
-    heatmap = heatmap_gen.compute_heatmap(metric='nlls')
+    heatmap_gen = Heatmap(map_data, resolution)
+    heatmap = heatmap_gen.compute_heatmap(landmarks, metric='nlls')
 
     print(heatmap)
 
@@ -224,7 +228,7 @@ if __name__ == '__main__':
     if np.max(heatmap) > 0.0:
         print("heatmap average: {}".format(np.average(heatmap, weights=(heatmap > 0))))
 
-    # Create a mask to dislpay the DGOP on top of the map and transpose for displaying
+    # Create a mask to dislpay the heatmap on top of the map and transpose for displaying
     heatmap_masked = np.ma.masked_where(map_data == 0, heatmap).transpose()
     plt.imshow(heatmap_masked, 'viridis', interpolation='none', alpha=1.0, origin='lower')
     plt.colorbar()
