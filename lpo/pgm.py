@@ -19,7 +19,7 @@ def read_line(pgm_file):
             line = line.decode("utf-8")
         if not line.lstrip().startswith('#'):
             return line.rstrip()
-        
+
 
 def check_file_type(pgm_filename):
     """ Check if the pgm file data is ascii (P2) or binary (P5) encoded
@@ -39,6 +39,7 @@ def check_file_type(pgm_filename):
                 raise ValueError("Found binary file which is NOT P5")
             return data_type
 
+
 def read_ascii_data(pgm_file, data):
     """ Read the P2 data and fill the numpy array """
     for y in range(data.shape[1]):
@@ -48,6 +49,7 @@ def read_ascii_data(pgm_file, data):
             y_inv = data.shape[1] - y - 1
             data[x, y_inv] = val
 
+
 def read_binary_data(pgm_file, data):
     """ Read the P5 data and fill the numpy array """
     for y in range(data.shape[1]):
@@ -56,6 +58,7 @@ def read_binary_data(pgm_file, data):
             # Invert y coordinate
             y_inv = data.shape[1] - y - 1
             data[x, y_inv] = val
+
 
 def read_pgm(pgm_filename):
     """ Read a pgm file and return the data as a numpy array """

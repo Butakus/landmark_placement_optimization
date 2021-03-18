@@ -131,6 +131,7 @@ def nlls_estimation(initial_guess=None, args=(), output=True):
 
     return result
 
+
 def mcmc_posterior_estimation(params, args, steps=1000, output=False, plot=False):
     """ TODO: docstring """
 
@@ -143,8 +144,8 @@ def mcmc_posterior_estimation(params, args, steps=1000, output=False, plot=False
                                   seed=1)
 
     if plot:
-        emcee_plot = corner.corner(emcee_result.flatchain, labels=emcee_result.var_names,
-                                   truths=list(emcee_result.params.valuesdict().values()))
+        corner.corner(emcee_result.flatchain, labels=emcee_result.var_names,
+                      truths=list(emcee_result.params.valuesdict().values()))
 
     if output:
 
@@ -157,7 +158,6 @@ def mcmc_posterior_estimation(params, args, steps=1000, output=False, plot=False
         mle_soln = emcee_result.chain[hp_loc]
         for i, par in enumerate(params):
             params[par].value = mle_soln[i]
-
 
         # print('\nMaximum Likelihood Estimation from emcee       ')
         # print('-------------------------------------------------')
@@ -183,6 +183,7 @@ def mcmc_posterior_estimation(params, args, steps=1000, output=False, plot=False
             print(fmt(name, err_m2, err_m1, median, err_p1, err_p2))
 
     return emcee_result
+
 
 def test_nlls_posterior():
     """ Perform multiple runs of the NLLS estimation with different measurement noise.
@@ -249,11 +250,12 @@ def nlls_proxy(pose):
     initial_guess[:2] += np.random.normal(0.0, 0.5, 2)
     initial_guess[2] += np.random.normal(0.0, 0.2)
     # Get the landmark measurements
-    measurements, measurement_covs = landmark_detection(pose_se3, landmarks)# std=0.01
+    measurements, measurement_covs = landmark_detection(pose_se3, landmarks)  # std=0.01
     # Estimate the NLLS solution
     nlls_result = nlls_estimation(args=(landmarks, measurements, measurement_covs),
                                   initial_guess=initial_guess, output=False)
     return nlls_result
+
 
 def nlls_sample(pose, sample_size):
     results = []
@@ -269,7 +271,6 @@ def nlls_sample(pose, sample_size):
 
 
 def nlls_pool_sample(pose, sample_size):
-    samples = []
     async_results = []
     pool = mp.Pool(1)
     # pool = mp.Pool(mp.cpu_count())
@@ -278,8 +279,6 @@ def nlls_pool_sample(pose, sample_size):
         async_results.append(async_result)
     pool.close()
     pool.join()
-    # for result in async_results:
-    #     samples.append(result.get())
 
     x = np.array([r.get().params['x'] for r in async_results])
     y = np.array([r.get().params['y'] for r in async_results])
@@ -287,9 +286,9 @@ def nlls_pool_sample(pose, sample_size):
 
     return (x, y, theta)
 
+
 def test_sim_accuracy():
     X = np.array([80.0, 40.0, np.pi/2])
-    X_se3 = lie.se3(t=[X[0], X[1], 0.0], r=lie.so3_from_rpy([0.0, 0.0, X[2]]))
 
     # sample_sizes = [50, 75, 100, 150, 200, 300, 400, 500, 750, 1000, 2000, 3000, 6000]
     sample_sizes = []
@@ -301,7 +300,6 @@ def test_sim_accuracy():
     # sample_sizes += list(range(3000, 6000, 300))
     # sample_sizes += list(range(6000, 10000, 1000))
     sample_sizes = np.array(sample_sizes)
-
 
     x_errors = np.empty(sample_sizes.shape)
     y_errors = np.empty(sample_sizes.shape)
@@ -395,7 +393,7 @@ def mcmc_proxy(pose, N):
     pose_se3 = lie.se3(t=[pose[0], pose[1], 0.0], r=lie.so3_from_rpy([0.0, 0.0, pose[2]]))
     measurements, measurement_covs = landmark_detection(pose_se3, landmarks, std=0.01)
     nlls_result = nlls_estimation(args=(landmarks, measurements, measurement_covs),
-                                       initial_guess=None, output=False)
+                                  initial_guess=None, output=False)
     emcee_result = mcmc_posterior_estimation(params=nlls_result.params, steps=N,
                                              args=(landmarks, measurements, measurement_covs),
                                              output=False)
@@ -409,7 +407,7 @@ def mcmc_proxy(pose, N):
 
 def test_mcmc_accuracy():
     X = np.array([80.0, 40.0, np.pi/2])
-    X_se3 = lie.se3(t=[X[0], X[1], 0.0], r=lie.so3_from_rpy([0.0, 0.0, X[2]]))
+    # X_se3 = lie.se3(t=[X[0], X[1], 0.0], r=lie.so3_from_rpy([0.0, 0.0, X[2]]))
 
     # sample_sizes = [50, 75, 100, 150, 200, 300, 400, 500, 750, 1000, 2000, 3000, 6000]
     chain_steps = []
@@ -438,7 +436,6 @@ def test_mcmc_accuracy():
         y_stds[i] = async_results[i].get()[1]
         stds[i] = np.sqrt(x_stds[i]**2 + y_stds[i]**2)
         times[i] = async_results[i].get()[2]
-
 
     # for i in range(chain_steps.shape[0]):
     #     print("##################################")
@@ -480,7 +477,6 @@ def test_mcmc_accuracy():
 
     ax[2].set_title("Processing Time (s)")
     ax[2].plot(chain_steps, times, color='b')
-
 
 
 def main():

@@ -115,6 +115,7 @@ def so3_from_se3(p: np.ndarray) -> np.ndarray:
     """
     return p[:3, :3]
 
+
 def so3_from_rpy(rpy: np.ndarray) -> np.ndarray:
     """
     :param rpy: roll, pitch, yaw angles
@@ -207,4 +208,3 @@ def relative_se3(p1: np.ndarray, p2: np.ndarray) -> np.ndarray:
     :return: the relative transformation p1^{⁻1} * p2
     """
     return np.dot(se3_inverse(p1), p2)
-

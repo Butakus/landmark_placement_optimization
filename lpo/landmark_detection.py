@@ -6,11 +6,12 @@ import numpy as np
 
 import lie_algebra as lie
 
-# TODO: Find a better way to setup this 
+# TODO: Find a better way to setup this
 MESAUREMENT_STD = 0.05
 
-MAX_RANGE = 30.0
+MAX_RANGE = 60.0
 # MAX_RANGE = np.inf
+
 
 def distance(pose, landmark):
     """ Compute the euclidean distance between an SE(3) pose and a landmark (3D array) """
@@ -21,6 +22,7 @@ def distance(pose, landmark):
 #     """ Compute the euclidean distance between an SE(3) pose and a landmark (2D array) """
 #     diff = landmark - pose[:2, 3]
 #     return np.sqrt(diff[0]**2 + diff[1]**2)
+
 
 def increase_range_error(std, distance):
     """ Increase the std of the measurement noise based on the distance to the landmark.
@@ -34,6 +36,7 @@ def increase_range_error(std, distance):
     # Linear addition with distance without limits
     # std_out = std + (0.01 * distance)
     return std_out
+
 
 def compute_measurement(pose, landmark, std=MESAUREMENT_STD):
     """ Compute the measurement between pose_1 and pose_2.
@@ -62,6 +65,7 @@ def compute_measurement(pose, landmark, std=MESAUREMENT_STD):
 
     return measurement, measurement_cov
 
+
 def filter_landmarks(landmarks, pose, max_range=MAX_RANGE):
     """ Get the subset of landmarks that can be ranged from the given pose """
     filtered_landmarks = []
@@ -87,6 +91,7 @@ def landmark_detection(pose, landmarks, std=MESAUREMENT_STD):
     for l in range(landmarks.shape[0]):
         measurements[l], measurement_covs[l] = compute_measurement(pose, landmarks[l], std)
     return measurements, measurement_covs
+
 
 if __name__ == '__main__':
     # Test measurement
