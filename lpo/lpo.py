@@ -14,11 +14,11 @@ from heatmap import Heatmap
 # Set numpy random seed
 np.random.seed(42)
 
-MAP_FILE = "/home/butakus/localization_reference/gazebo/map_5p0.pgm"
-RESOLUTION = 5.0
+MAP_FILE = "/home/butakus/localization_reference/gazebo/map_2p0.pgm"
+RESOLUTION = 2.0
 
 TARGET_ACCURACY = 0.1
-MAX_INNER_ITER = 200
+MAX_INNER_ITER = 500
 MAX_LANDMARKS = 15
 
 

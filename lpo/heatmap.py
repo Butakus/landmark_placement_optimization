@@ -18,6 +18,8 @@ import nlls
 import lie_algebra as lie
 from landmark_detection import landmark_detection, filter_landmarks
 
+NLLS_SAMPLES = 100
+N_THREADS = mp.cpu_count()
 
 # landmarks = np.array([
 #     [5.0, 40.0, 0.0],
@@ -106,10 +108,8 @@ class Heatmap(object):
     def compute_heatmap(self, landmarks, metric):
         self.landmarks = landmarks
         metric_f = self.metrics[metric]
-        # pool = mp.Pool(mp.cpu_count())
-        # pool = mp.Pool(12)
         t0 = time()
-        with mp.get_context("spawn").Pool(12) as pool:
+        with mp.get_context("spawn").Pool(N_THREADS) as pool:
             for i in range(self.map_data.shape[0]):
                 for j in range(self.map_data.shape[1]):
                     # Only map the area if it is drivable
@@ -136,7 +136,8 @@ class Heatmap(object):
             print("WARNING: Not enough landmarks in range!! Cell: {}".format(cell_t))
             return (i, j, np.inf)
 
-        N = 10  # Take N samples to make it more robust
+        # N = 10  # Take N samples to make it more robust
+        N = NLLS_SAMPLES
 
         x = np.zeros(N)
         y = np.zeros(N)
