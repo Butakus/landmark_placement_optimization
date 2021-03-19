@@ -14,8 +14,11 @@ from heatmap import Heatmap
 # Set numpy random seed
 np.random.seed(42)
 
-MAP_FILE = "/home/butakus/localization_reference/gazebo/map_2p0.pgm"
-RESOLUTION = 2.0
+RESOLUTION = 5
+MAP_FILE = "/home/butakus/localization_reference/gazebo/map_{r}p0.pgm".format(r=RESOLUTION)
+RESOLUTION = float(RESOLUTION)
+
+LOG_FILE = "/home/butakus/localization_reference/landmark_placement_optimization/logs/lpo_accuracy.txt"
 
 TARGET_ACCURACY = 0.1
 MAX_INNER_ITER = 500
@@ -278,6 +281,18 @@ class LPO(object):
         best_heatmap_accuracy = self.heatmap_accuracy[best_heatmap_idx, 0]
         return (best_heatmap_idx, best_heatmap_accuracy)
 
+    def save_best_accuracy(self, n_landmarks, inner_iter):
+        """ Write the best heatmap accuracy (and coverage fitness) into a file in CSV format:
+            "Number of landmarks, current inner iteration, heatmap index, heatmap value, coverage index, coverage value"
+        """
+        best_heatmap_idx, best_heatmap = self.get_best_heatmap()
+        best_coverage_idx = np.argmax(self.coverage_fitness[:, 0])
+        best_coverage = self.coverage_fitness[best_coverage_idx, 0]
+        with open(LOG_FILE, 'a') as f:
+            f.write(F"{n_landmarks},{inner_iter},"
+                    F"{best_heatmap_idx},{best_heatmap},"
+                    F"{best_coverage_idx},{best_coverage}\n")
+
     def check_accuracy(self):
         for n in range(self.population_size):
             self.heatmaps[n] = self.heatmap_builder.compute_heatmap(self.population[n], 'nlls')
@@ -306,14 +321,14 @@ class LPO(object):
             for l in range(n_landmarks):
                 self.population[n, l] = self.find_cell_max_coverage(self.population[n, :l, :], randomness=0.2)
             self.coverage_maps[n] = self.get_coverage_map(self.population[n])
-            self.heatmaps[n] = self.heatmap_builder.compute_heatmap(self.population[n], 'nlls')
-            self.heatmap_accuracy[n, 0] = self.max_heatmap_accuracy(self.heatmaps[n])
-            # self.heatmaps[n] = None
-            # self.heatmap_accuracy[n, 0] = np.inf
             self.coverage_fitness[n, 0] = self.fair_coverage_fitness(self.coverage_maps[n])
+            self.heatmaps[n] = None
+            self.heatmap_accuracy[n, 0] = np.inf
 
             # Display stuff
             if False:
+                self.heatmaps[n] = self.heatmap_builder.compute_heatmap(self.population[n], 'nlls')
+                self.heatmap_accuracy[n, 0] = self.max_heatmap_accuracy(self.heatmaps[n])
                 score_map = self.coverage_maps[n].copy()
                 score_map[self.free_mask] = 5 * np.tanh(score_map[self.free_mask] / 3)
                 plot_configuration(self.map_data, self.population[n],
@@ -509,6 +524,8 @@ class LPO(object):
                         print("Valid solution found!!")
                         print(F"Valid landmarks:\n{self.population[best_heatmap_idx]}")
                         return self.population[best_heatmap_idx]
+                    # Save to file
+                    self.save_best_accuracy(n_landmarks, inner_iter)
 
             # TODO: Break point. Do this better.
             if n_landmarks > MAX_LANDMARKS:
