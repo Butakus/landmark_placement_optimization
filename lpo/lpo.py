@@ -3,9 +3,11 @@
 """ TODO: docstring """
 
 from time import time
+import os
 
 import numpy as np
 from matplotlib import pyplot as plt
+import matplotlib.lines as mlines
 
 import pgm
 import landmark_detection
@@ -14,38 +16,47 @@ from heatmap import Heatmap
 # Set numpy random seed
 np.random.seed(42)
 
-RESOLUTION = 5
-MAP_FILE = "/home/butakus/localization_reference/gazebo/map_{r}p0.pgm".format(r=RESOLUTION)
-RESOLUTION = float(RESOLUTION)
-
-LOG_FILE = "/home/butakus/localization_reference/landmark_placement_optimization/logs/lpo_accuracy.txt"
+LOG_FILE = "lpo_accuracy.txt"
+LANDMARKS_FILE = "landmarks.npy"
 
 TARGET_ACCURACY = 0.1
 MAX_INNER_ITER = 500
 MAX_LANDMARKS = 15
 
 
-def plot_configuration(map_data, landmarks, heatmap=None, coverage=None, coverage_score=None, no_show=False):
+def plot_configuration(map_data, map_resolution, landmarks, heatmap=None, coverage=None, coverage_score=None, no_show=False):
     """ Display multiple figures for the given landmark configuration """
     map_display = map_data.transpose()
-    landmarks_display = landmarks / RESOLUTION
+    landmarks_display = landmarks / map_resolution
     plot_something = False
     if heatmap is not None:
         heatmap_masked = np.ma.masked_where(map_data == 0, heatmap).transpose()
         plt.figure()
         plt.imshow(map_display, cmap='gray', origin='lower')
-        plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='m')
+        plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='m', s=70.0)
         plt.imshow(heatmap_masked, 'viridis', interpolation='none', alpha=1.0, origin='lower')
-        plt.colorbar()
+        plt.tick_params(axis='both', which='major', labelsize=16)
+        cbar = plt.colorbar()
+        cbar.ax.tick_params(labelsize=16)
+        cbar.ax.set_ylabel('Error std (m)', rotation=270, fontsize=22, labelpad=25.0)
+        triangle = mlines.Line2D([], [], color='m', marker='^', linestyle='None', markersize=10, label='Landmarks')
+        legend_handles = [triangle]
+        plt.legend(handles=legend_handles, fontsize=20)
         plot_something = True
     if coverage is not None:
         coverage_masked = np.ma.masked_where(map_data == 0, coverage).transpose()
         plt.figure()
         plt.imshow(map_display, cmap='gray', origin='lower')
-        plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='m')
+        plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='m', s=70.0)
         plt.imshow(coverage_masked, 'plasma', interpolation='none', alpha=1.0, origin='lower',
                    vmin=0.0, vmax=landmarks.shape[0])
-        plt.colorbar()
+        plt.tick_params(axis='both', which='major', labelsize=16)
+        cbar = plt.colorbar()
+        cbar.ax.tick_params(labelsize=16)
+        cbar.ax.set_ylabel('Coverage (# of landmarks)', rotation=270, fontsize=22, labelpad=25.0)
+        triangle = mlines.Line2D([], [], color='m', marker='^', linestyle='None', markersize=10, label='Landmarks')
+        legend_handles = [triangle]
+        plt.legend(handles=legend_handles, fontsize=20)
         plot_something = True
     if coverage_score is not None:
         score_map_masked = np.ma.masked_where(map_data == 0, coverage_score).transpose()
@@ -67,9 +78,10 @@ def plot_configuration(map_data, landmarks, heatmap=None, coverage=None, coverag
 class LPO(object):
     """ TODO: docstring for LPO """
 
-    def __init__(self, map_data):
+    def __init__(self, map_data, map_resolution):
         super(LPO, self).__init__()
         self.map_data = map_data
+        self.map_resolution = map_resolution
         self.map_display = self.map_data.transpose()
         # Precompute free cells and landmark cells
         self.free_mask = self.map_data == 255
@@ -82,7 +94,7 @@ class LPO(object):
         t1 = time()
         print(F"Precompute range time: {t1 - t0}")
         # Initialize heatmap builder
-        self.heatmap_builder = Heatmap(map_data, RESOLUTION)
+        self.heatmap_builder = Heatmap(map_data, map_resolution)
 
     def precompute_range(self):
         self.range_coverage_map = np.empty(self.map_data.shape, dtype=object)
@@ -94,10 +106,10 @@ class LPO(object):
         for land_cell in self.land_cells:
             land_cell_idx = tuple(land_cell)
             self.range_coverage_map[land_cell_idx] = set()
-            land_cell_m = land_cell * RESOLUTION
+            land_cell_m = land_cell * self.map_resolution
             for free_cell in self.free_cells:
                 free_cell_idx = tuple(free_cell)
-                free_cell_m = free_cell * RESOLUTION
+                free_cell_m = free_cell * self.map_resolution
                 cell_range = np.sqrt((land_cell_m[0] - free_cell_m[0])**2 + (land_cell_m[1] - free_cell_m[1])**2)
                 if cell_range < landmark_detection.MAX_RANGE:
                     self.range_coverage_map[land_cell_idx].add(free_cell_idx)
@@ -107,7 +119,7 @@ class LPO(object):
     def get_coverage_map(self, landmarks):
         """ Compute the coverage map, indicating how many landmarks are in range of each cell """
         coverage_map = np.zeros(self.map_data.shape)
-        landmark_coords = np.floor_divide(landmarks[:, :2], RESOLUTION).astype('int')
+        landmark_coords = np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int')
         for (l, landmark_cell) in enumerate(landmark_coords):
             # Check all cells in range of this landmark and increment the coverage on each one
             try:
@@ -124,7 +136,7 @@ class LPO(object):
     #     """ Compute the coverage map, indicating how many landmarks are in range of each cell """
     #     coverage_map = np.zeros(self.map_data.shape)
     #     for (i, j) in self.free_cells:
-    #         cell_t = np.array([i * RESOLUTION, j * RESOLUTION, 0.0])
+    #         cell_t = np.array([i * self.map_resolution, j * self.map_resolution, 0.0])
     #         cell_pose = lie.se3(t=cell_t, r=lie.so3_from_rpy([0.0, 0.0, 0.0]))
     #         for l, landmark in enumerate(landmarks):
     #             # Check if landmark is in range
@@ -148,7 +160,7 @@ class LPO(object):
             - Each non-free cell contains at most one landmark.
         """
         # Get the cell coordinates of the landmarks
-        landmark_coords = np.floor_divide(landmarks[:, :2], RESOLUTION).astype('int')
+        landmark_coords = np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int')
 
         occupied_cells = np.zeros(self.map_data.shape, dtype=bool)
         for (l, landmark_cell) in enumerate(landmark_coords):
@@ -227,7 +239,7 @@ class LPO(object):
         coverage_map = self.get_coverage_map(landmarks)
         land_score = np.zeros(self.map_data.shape)
 
-        landmark_coords = np.floor_divide(landmarks[:, :2], RESOLUTION).astype('int')
+        landmark_coords = np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int')
         landmark_coords = [tuple(c) for c in landmark_coords]
 
         for land_cell in self.land_cells:
@@ -251,16 +263,72 @@ class LPO(object):
         best_scores = np.argwhere(land_score >= int((1 - randomness)*max_score))
         new_landmark_cell = best_scores[np.random.choice(best_scores.shape[0])]
 
-        new_landmark = np.array([new_landmark_cell[0] * RESOLUTION, new_landmark_cell[1] * RESOLUTION, 0.0])
+        new_landmark = np.array([new_landmark_cell[0] * self.map_resolution, new_landmark_cell[1] * self.map_resolution, 0.0])
 
         # Create a mask to dislpay the score map on top of the map and transpose for displaying
-        # landmarks_display = landmarks / RESOLUTION
-        # plt.imshow(self.map_display, cmap='gray', origin='lower')
-        # plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='m')
-        # land_score_masked = np.ma.masked_where(self.map_data == 255, land_score).transpose()
-        # plt.imshow(land_score_masked, 'viridis', interpolation='none', alpha=1.0, origin='lower')
-        # plt.colorbar()
-        # plt.show()
+        landmarks_display = landmarks / self.map_resolution
+        plt.imshow(self.map_display, cmap='gray', origin='lower')
+        plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='m')
+        land_score_masked = np.ma.masked_where(self.map_data == 255, land_score).transpose()
+        plt.imshow(land_score_masked, 'plasma', interpolation='none', alpha=1.0, origin='lower')
+        plt.colorbar()
+        plt.show()
+
+        return new_landmark
+
+    def find_cell_max_coverage_2(self, landmarks, randomness=0.0):
+        """ Find the free cell that maximizes the coverage after placing a new landmark there
+            The score of each cell is determined by the coverage score after placing the new landmark there
+            Then, one of the cells with the highest score is randomly selected to place a new landmark
+        """
+        if randomness < 0.0 or randomness > 1.0:
+            print("WARNING: Randomness argument must be a number in the range [0.0, 1.0]")
+            randomness = np.clip(randomness, 0.0, 1.0)
+
+        coverage_map = self.get_coverage_map(landmarks)
+        land_score = np.zeros(self.map_data.shape)
+
+        landmark_coords = np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int')
+        landmark_coords = [tuple(c) for c in landmark_coords]
+        min_score = np.inf
+        for land_cell in self.land_cells:
+            land_cell_idx = tuple(land_cell)
+            # Do not process land cells where we already have a landmark
+            if land_cell_idx in landmark_coords:
+                # print("land_cell in landmarks!!!")
+                continue
+            # Build a new list of landmarks and check what would be the coverage score with the new addition
+            temp_landmark = np.array([land_cell[0] * self.map_resolution, land_cell[1] * self.map_resolution, 0.0])
+            temp_landmarks = np.concatenate((landmarks, np.array([temp_landmark])), axis=0)
+            coverage_map = self.get_coverage_map(temp_landmarks)
+            land_score[land_cell_idx] = self.fair_coverage_fitness(coverage_map)
+            min_score = min(min_score, land_score[land_cell_idx])
+
+        # Hide free cells so they cannot be chosen (even if max_score is zero)
+        land_score[self.free_mask] = -1
+
+        # Select randomly one of the land cells with the highest scores
+        max_score = np.max(land_score)
+
+        best_scores = np.argwhere(land_score >= int((1 - randomness)*max_score))
+        new_landmark_cell = best_scores[np.random.choice(best_scores.shape[0])]
+
+        new_landmark = np.array([new_landmark_cell[0] * self.map_resolution, new_landmark_cell[1] * self.map_resolution, 0.0])
+
+        # Create a mask to dislpay the score map on top of the map and transpose for displaying
+        landmarks_display = landmarks / self.map_resolution
+        plt.imshow(self.map_display, cmap='gray', origin='lower')
+        plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='tab:green', s=150.0)
+        land_score_masked = np.ma.masked_where(self.map_data == 255, land_score).transpose()
+        plt.imshow(land_score_masked, 'plasma', interpolation='none', alpha=1.0, origin='lower',
+                   vmin=min_score, vmax=max_score)
+        cbar = plt.colorbar()
+        cbar.ax.tick_params(labelsize=16)
+        triangle = mlines.Line2D([], [], color='tab:green', marker='^',
+                                 linestyle='None', markersize=10, label='Landmarks')
+        legend_handles = [triangle]
+        plt.legend(handles=legend_handles, fontsize=20)
+        plt.show()
 
         return new_landmark
 
@@ -300,7 +368,8 @@ class LPO(object):
             # Display stuff
             if False:
                 self.coverage_maps[n] = self.get_coverage_map(self.population[n])
-                plot_configuration(self.map_data, self.population[n],
+                plot_configuration(self.map_data, self.map_resolution,
+                                   self.population[n],
                                    heatmap=self.heatmaps[n],
                                    coverage=self.coverage_maps[n])
         print(F"Heatmap fitness:\n{self.heatmap_accuracy}")
@@ -331,7 +400,8 @@ class LPO(object):
                 self.heatmap_accuracy[n, 0] = self.max_heatmap_accuracy(self.heatmaps[n])
                 score_map = self.coverage_maps[n].copy()
                 score_map[self.free_mask] = 5 * np.tanh(score_map[self.free_mask] / 3)
-                plot_configuration(self.map_data, self.population[n],
+                plot_configuration(self.map_data, self.map_resolution,
+                                   self.population[n],
                                    heatmap=self.heatmaps[n],
                                    coverage=self.coverage_maps[n],
                                    coverage_score=score_map)
@@ -343,7 +413,7 @@ class LPO(object):
         """
         # Build a map of the other landmarks to avoid stepping on them
         selected_map = np.zeros(self.map_data.shape, dtype=bool)
-        landmark_coords = (landmarks[:, :2] / RESOLUTION).astype(int)
+        landmark_coords = (landmarks[:, :2] / self.map_resolution).astype(int)
         selected_map[tuple(landmark_coords.T)] = True
 
         legal_neighbours = []
@@ -366,7 +436,7 @@ class LPO(object):
         for n in range(self.population_size):
             landmark_disorder = np.array(range(self.population.shape[1]))
             np.random.shuffle(landmark_disorder)
-            landmark_coords = (self.population[n, :, :2] / RESOLUTION).astype(int)
+            landmark_coords = (self.population[n, :, :2] / self.map_resolution).astype(int)
             for l in landmark_disorder:
                 coverage_map = self.get_coverage_map(self.population[n])
                 best_fitness = self.fair_coverage_fitness(coverage_map)
@@ -374,7 +444,7 @@ class LPO(object):
                 # Find the legal movements for this landmark
                 neighbours = self.find_legal_neighbours(landmark_coords[l], self.population[n])
                 for (i, j) in neighbours:
-                    neighbour_landmark = np.array([i * RESOLUTION, j * RESOLUTION, 0.0])
+                    neighbour_landmark = np.array([i * self.map_resolution, j * self.map_resolution, 0.0])
                     # Update landmark with neighbour
                     self.population[n, l] = neighbour_landmark
                     # Check neighbour fitness
@@ -435,14 +505,14 @@ class LPO(object):
         landmark_pool_coords = []
         for winner in winners:
             for landmark in winner:
-                landmark_idx = tuple((landmark[:2] / RESOLUTION).astype(int))
+                landmark_idx = tuple((landmark[:2] / self.map_resolution).astype(int))
                 if not placement_selected[landmark_idx]:
                     placement_selected[landmark_idx] = True
                     landmark_pool.append(landmark)
                     landmark_pool_coords.append(landmark_idx)
         landmark_pool_coords = np.array(landmark_pool_coords)
 
-        # plot_configuration(self.map_data, np.array(landmark_pool))
+        # plot_configuration(self.map_data, self.map_resolution, np.array(landmark_pool))
 
         for n in range(offspring.shape[0]):
             selected_landmarks = np.random.choice(len(landmark_pool), offspring.shape[1], replace=False)
@@ -453,11 +523,11 @@ class LPO(object):
                 if np.random.random() < mutation_rate:
                     # Mutate landmark. Select new landmark position with greedy algorithm
                     new_landmark = self.find_cell_max_coverage(offspring[n, :l, :], randomness=0.3)
-                    new_landmark_idx = tuple((new_landmark[:2] / RESOLUTION).astype(int))
+                    new_landmark_idx = tuple((new_landmark[:2] / self.map_resolution).astype(int))
                     # Repeat the selection process until we get a landmark position that was not already in the pool
                     while selected_map[new_landmark_idx]:
                         new_landmark = self.find_cell_max_coverage(offspring[n, :l, :], randomness=0.3)
-                        new_landmark_idx = tuple((new_landmark[:2] / RESOLUTION).astype(int))
+                        new_landmark_idx = tuple((new_landmark[:2] / self.map_resolution).astype(int))
                     offspring[n, l] = new_landmark
                 else:
                     # Take it from the list selected from the pool
@@ -470,7 +540,7 @@ class LPO(object):
 
         # Find the (theorical) minimum of required landmarks to cover the whole map area
         # Then, add 3 more (because we want to be happy)
-        map_area = self.map_data.shape[0] * self.map_data.shape[1] * RESOLUTION**2
+        map_area = self.map_data.shape[0] * self.map_data.shape[1] * self.map_resolution**2
         landmark_coverage_area = np.pi * landmark_detection.MAX_RANGE**2
         n_landmarks = int(np.ceil(3 * (map_area / landmark_coverage_area) + 3))
         # n_landmarks = 6
@@ -562,18 +632,19 @@ class LPO(object):
         return landmarks
 
 
-def main():
-    map_data = pgm.read_pgm(MAP_FILE)
+def main(args):
+    print(F"Log file: {LOG_FILE}")
+    map_data = pgm.read_pgm(args.map_file)
     width, height = map_data.shape
     print(map_data)
-    print("resolution: {}".format(RESOLUTION))
+    print("resolution: {}".format(args.map_resolution))
     print("width: {}".format(width))
     print("height: {}".format(height))
     print("Map cells: {}".format(width*height))
     print("Map free cells: {}".format(np.count_nonzero(map_data)))
 
     # Find a landmark setup that guarantees the desired accuracy
-    lpo = LPO(map_data)
+    lpo = LPO(map_data, args.map_resolution)
 
     landmarks = lpo.find_landmarks()
     print("landmarks:\n{}".format(landmarks))
@@ -582,7 +653,7 @@ def main():
     print("Valid configuration: {}".format(valid))
 
     # Save the landmarks to a file
-    np.save("landmarks", landmarks)
+    np.save(LANDMARKS_FILE, landmarks)
 
     heatmap = lpo.heatmap_builder.compute_heatmap(landmarks, 'nlls')
     print("heatmap mean: {}".format(np.mean(heatmap)))
@@ -599,8 +670,30 @@ def main():
     print("coverage fitness: {}".format(lpo.fair_coverage_fitness(coverage)))
 
     # Display the maps for the obtained landmark configuration
-    plot_configuration(map_data, landmarks, heatmap=heatmap, coverage=coverage)
+    plot_configuration(map_data, RESOLUTION, landmarks, heatmap=heatmap, coverage=coverage)
 
 
 if __name__ == '__main__':
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(description='PGM module test')
+    parser.add_argument('map_file', metavar='map_file', type=str,
+                        help='Map pgm file')
+    parser.add_argument('map_resolution', metavar='map_resolution', type=float,
+                        help='Map resolution (m/cell)')
+    parser.add_argument('-l', '--log', metavar='log_file', type=str,
+                        help='Path to log file')
+    parser.add_argument('-s', '--landmarks', metavar='landmarks_file', type=str,
+                        help='Path to file to save best landmarks (.npy)')
+    args = parser.parse_args()
+
+    # Change log file if needed and make path absolute
+    if args.log and not os.path.isdir(args.log):
+        LOG_FILE = args.log
+    LOG_FILE = os.path.abspath(LOG_FILE)
+
+    # Change landmarks file if needed and make path absolute
+    if args.landmarks and not os.path.isdir(args.landmarks):
+        LANDMARKS_FILE = args.landmarks
+    LANDMARKS_FILE = os.path.abspath(LANDMARKS_FILE)
+
+    main(args)

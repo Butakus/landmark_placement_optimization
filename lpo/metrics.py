@@ -3,7 +3,7 @@
 """ TODO: docstring """
 
 import numpy as np
-# np.random.seed(1)
+# np.random.seed(42)
 
 import lie_algebra as lie
 from landmark_detection import landmark_detection

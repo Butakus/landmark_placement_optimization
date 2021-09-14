@@ -1,5 +1,7 @@
 numpy
 matplotlib
+pandas
 lmfit
+emcee
 tqdm
 corner

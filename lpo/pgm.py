@@ -6,7 +6,6 @@
 """
 
 import numpy as np
-from matplotlib import pyplot as plt
 
 
 def read_line(pgm_file):
@@ -91,7 +90,14 @@ def read_pgm(pgm_filename):
 
 
 if __name__ == '__main__':
-    data = read_pgm("/home/butakus/localization_reference/gazebo/map_2p0.pgm")
+    import argparse
+    from matplotlib import pyplot as plt
+    parser = argparse.ArgumentParser(description='PGM module test')
+    parser.add_argument('map_file', metavar='map_file', type=str,
+                        help='Map pgm file')
+    args = parser.parse_args()
+    data = read_pgm(args.map_file)
+
     print(data.shape)
     print(data)
     plt.imshow(data)

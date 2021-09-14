@@ -67,7 +67,7 @@ def compute_measurement(pose, landmark, std=MESAUREMENT_STD):
 
 
 def filter_landmarks(landmarks, pose, max_range=MAX_RANGE):
-    """ Get the subset of landmarks that can be ranged from the given pose """
+    """ Get the subset of landmarks that can be ranged from the given pose (visibility model) """
     filtered_landmarks = []
     for l in range(landmarks.shape[0]):
         if distance(pose, landmarks[l]) < max_range:
