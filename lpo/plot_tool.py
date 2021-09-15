@@ -2,6 +2,7 @@
 
 """ TODO: docstring """
 
+import os
 import numpy as np
 # from matplotlib import pyplot as plt
 
@@ -11,21 +12,23 @@ from lpo import LPO, plot_configuration
 # Set numpy random seed
 np.random.seed(42)
 
+LANDMARKS_FILE = "landmarks.npy"
+
 
 def main(args):
     map_data = pgm.read_pgm(args.map_file)
     width, height = map_data.shape
     print(map_data)
-    print("resolution: {}".format(args.resolution))
+    print("resolution: {}".format(args.map_resolution))
     print("width: {}".format(width))
     print("height: {}".format(height))
     print("Map cells: {}".format(width*height))
     print("Map free cells: {}".format(np.count_nonzero(map_data)))
 
     # Find a landmark setup that guarantees the desired accuracy
-    lpo = LPO(map_data, args.resolution)
+    lpo = LPO(map_data, args.map_resolution)
 
-    landmarks = np.load("landmarks.npy")
+    landmarks = np.load(LANDMARKS_FILE)
     landmarks = np.array([
         [5.0, 40.0, 0.0],
         [40.0, 50.0, 0.0],
@@ -93,6 +96,13 @@ if __name__ == '__main__':
                         help='Map pgm file')
     parser.add_argument('map_resolution', metavar='map_resolution', type=float,
                         help='Map resolution (m/cell)')
+    parser.add_argument('-l', '--landmarks', metavar='landmarks_file', type=str,
+                        help='Path to file to save best landmarks (.npy)')
     args = parser.parse_args()
+
+    # Change landmarks file if needed and make path absolute
+    if args.landmarks and not os.path.isdir(args.landmarks):
+        LANDMARKS_FILE = args.landmarks
+    LANDMARKS_FILE = os.path.abspath(LANDMARKS_FILE)
 
     main(args)

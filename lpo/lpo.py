@@ -634,6 +634,7 @@ class LPO(object):
 
 def main(args):
     print(F"Log file: {LOG_FILE}")
+    print(F"Landmarks file: {LANDMARKS_FILE}")
     map_data = pgm.read_pgm(args.map_file)
     width, height = map_data.shape
     print(map_data)
@@ -680,10 +681,10 @@ if __name__ == '__main__':
                         help='Map pgm file')
     parser.add_argument('map_resolution', metavar='map_resolution', type=float,
                         help='Map resolution (m/cell)')
-    parser.add_argument('-l', '--log', metavar='log_file', type=str,
-                        help='Path to log file')
-    parser.add_argument('-s', '--landmarks', metavar='landmarks_file', type=str,
+    parser.add_argument('-l', '--landmarks', metavar='landmarks_file', type=str,
                         help='Path to file to save best landmarks (.npy)')
+    parser.add_argument('--log', metavar='log_file', type=str,
+                        help='Path to log file')
     args = parser.parse_args()
 
     # Change log file if needed and make path absolute

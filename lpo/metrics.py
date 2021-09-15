@@ -124,9 +124,7 @@ def compute_crlb(measurements, measurement_covs):
     return crlb
 
 
-
-
-if __name__ == '__main__':
+def main():
     X = np.array([2.0, 3.0, 0.0])
     X[:2] += np.random.normal(0.0, 0.2, 2)
     print("X: {}".format(X))
@@ -140,3 +138,7 @@ if __name__ == '__main__':
     gdop = compute_gdop_2d(measurements)
     print(measurement_covs[0])
     # crlb = compute_crlb(measurements, measurement_covs)
+
+
+if __name__ == '__main__':
+    main()

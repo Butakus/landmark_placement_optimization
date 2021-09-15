@@ -89,16 +89,20 @@ def read_pgm(pgm_filename):
         return data
 
 
-if __name__ == '__main__':
-    import argparse
+def main(args):
     from matplotlib import pyplot as plt
-    parser = argparse.ArgumentParser(description='PGM module test')
-    parser.add_argument('map_file', metavar='map_file', type=str,
-                        help='Map pgm file')
-    args = parser.parse_args()
     data = read_pgm(args.map_file)
 
     print(data.shape)
     print(data)
     plt.imshow(data)
     plt.show()
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='PGM module test')
+    parser.add_argument('map_file', metavar='map_file', type=str,
+                        help='Map pgm file')
+    args = parser.parse_args()
+    main(args)

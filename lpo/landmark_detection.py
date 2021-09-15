@@ -93,7 +93,7 @@ def landmark_detection(pose, landmarks, std=MESAUREMENT_STD):
     return measurements, measurement_covs
 
 
-if __name__ == '__main__':
+def main():
     # Test measurement
     print("Measurement test")
     pose = lie.se3(t=[0.0, 0.0, 0.0], r=lie.so3_from_rpy([0.0, 0.0, np.pi/2]))
@@ -118,3 +118,8 @@ if __name__ == '__main__':
     measurements, measurement_covs = landmark_detection(pose, landmarks)
     print("measurements:\n{}".format(measurements))
     print("measurement_covs:\n{}".format(measurement_covs))
+
+
+
+if __name__ == '__main__':
+    main()

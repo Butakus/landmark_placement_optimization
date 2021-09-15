@@ -11,7 +11,7 @@ import pgm
 import metrics
 import lie_algebra as lie
 from landmark_detection import landmark_detection
-import heatmap
+from heatmap import Heatmap
 
 # landmarks = np.array([
 #     [5.0, 40.0, 0.0],
@@ -112,7 +112,7 @@ def main(args):
     # exit()
 
     # Compute NLLS posterior:
-    heatmap_gen = heatmap.Heatmap(map_data, resolution)
+    heatmap_gen = Heatmap(map_data, resolution)
     heatmap = heatmap_gen.compute_heatmap(landmarks, metric='mcmc')
 
     # print(heatmap)
