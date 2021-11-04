@@ -12,6 +12,8 @@ MESAUREMENT_STD = 0.05
 MAX_RANGE = 60.0
 # MAX_RANGE = np.inf
 
+POLE_RADIUS = 0.085
+
 
 def distance(pose, landmark):
     """ Compute the euclidean distance between an SE(3) pose and a landmark (3D array) """
@@ -74,6 +76,49 @@ def filter_landmarks(landmarks, pose, max_range=MAX_RANGE):
             filtered_landmarks.append(landmarks[l])
     return np.array(filtered_landmarks)
 
+def angle_between(angle, angle_start, alpha):
+    """ Check if a given angle is in the range between [angle_start, angle_start + alpha] """
+    print("angle_between {s} - {a}".format(s=angle_start, a=alpha))
+    angle_trans = (angle - angle_start) % (2*np.pi)
+    print(angle_trans <= alpha)
+    return angle_trans <= alpha
+
+def filter_landmarks_occlusions(landmarks, pose, max_range=MAX_RANGE):
+    """ Get the subset of landmarks that can be ranged from the given pose and that are not occluded (visibility model) """
+    sorted_landmarks = []
+    # First filter and sort by distance
+    for l in range(landmarks.shape[0]):
+        l_distance = distance(pose, landmarks[l])
+        if l_distance < max_range:
+            sorted_landmarks.append((l_distance, landmarks[l]))
+    sorted_landmarks.sort(key=lambda a: a[0])
+    print("sorted_landmarks:\n{}".format(sorted_landmarks))
+    filtered_landmarks = []
+    blocked_angles = []
+    for l_distance, landmark in sorted_landmarks:
+        # Comppute landmark angle
+        print("-----------------------")
+        print("blocked_angles:\n{}".format(blocked_angles))
+        print("landmark:\n{}".format(landmark))
+        landmark_angle = np.arctan2(landmark[1], landmark[0]) % (2*np.pi)
+        print("landmark_angle:\n{}".format(landmark_angle))
+        # Check if landmark is blocked by a closer landmark and skip it
+        blocked_angle = False
+        for angle_start, alpha in blocked_angles:
+            blocked_angle = angle_between(landmark_angle, angle_start, alpha)
+            if blocked_angle:
+                break
+        if blocked_angle:
+            continue
+        # Add landmark to final list
+        filtered_landmarks.append(landmark)
+        # Compute FOV of new landmark and add it to the block list
+        alpha = 2 * np.arctan2(POLE_RADIUS, l_distance)
+        angle_start = (landmark_angle - alpha/2) % (2*np.pi)
+        blocked_angles.append((angle_start, alpha))
+
+    return np.array(filtered_landmarks)
+
 
 def landmark_detection(pose, landmarks, std=MESAUREMENT_STD):
     """ Compute a measurement from the origin pose to each of the landmarks.
@@ -106,16 +151,27 @@ def main():
 
     # Test landmark detection
     print("\nLandmark detection test")
+    # landmarks = np.array([
+    #     [-5.0, 5.0, 0.0],
+    #     [5.0, 5.0, 0.0],
+    #     [5.0, -5.0, 0.0],
+    #     [-5.0, -5.0, 0.0],
+    # ])
     landmarks = np.array([
         [-5.0, 5.0, 0.0],
         [5.0, 5.0, 0.0],
+        [15.0, 15.2, 0.0],
         [5.0, -5.0, 0.0],
         [-5.0, -5.0, 0.0],
+        [30.0, 0.0, 0.0],
+        [10.0, 0.0, 0.0],
     ])
     pose = lie.se3(t=[1.0, 1.0, 0.0], r=lie.so3_from_rpy([0.0, 0.0, 0.0]))
     print("origin: {}".format(pose))
     print("landmarks:\n{}".format(landmarks))
-    measurements, measurement_covs = landmark_detection(pose, landmarks)
+    filtered_landmarks = filter_landmarks_occlusions(landmarks, pose, max_range=MAX_RANGE)
+    print("filtered landmarks:\n{}".format(filtered_landmarks))
+    measurements, measurement_covs = landmark_detection(pose, filtered_landmarks)
     print("measurements:\n{}".format(measurements))
     print("measurement_covs:\n{}".format(measurement_covs))
 
