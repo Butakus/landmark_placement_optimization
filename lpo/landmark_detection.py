@@ -7,7 +7,8 @@ import numpy as np
 import lie_algebra as lie
 
 # TODO: Find a better way to setup this
-MESAUREMENT_STD = 0.05
+# MESAUREMENT_STD = 0.05
+MESAUREMENT_STD = 'model'
 
 MAX_RANGE = 30.0
 # MAX_RANGE = np.inf
@@ -24,6 +25,38 @@ def distance_2d(pose, landmark):
     """ Compute the euclidean distance between a 2D pose and a 2D landmark (2D arrays) """
     diff = landmark - pose
     return np.sqrt(diff[0]**2 + diff[1]**2)
+
+def angle(pose, landmark):
+    """ Compute the angle between an SE(3) pose and a landmark (3D array) in the X/Y plane """
+    diff = landmark - pose[:3, 3]
+    return np.arctan2(diff[1], diff[0])
+
+
+# Error model functions from LPO calibration
+def distance_std_model(distance):
+    coeffs = [
+        0.0005479803695850574,
+        0.0007002317135424681
+    ]
+    line_fit_f = np.poly1d(coeffs)
+    return line_fit_f(distance)
+
+
+def get_transformed_covariance(distance, angle):
+    distance_std = distance_std_model(distance)
+    angle_std = 0.0010694619844429979 # rad
+    angle_std_scaled = distance * np.tan(angle_std)
+    polar_cov = np.array([
+        [distance_std**2, 0.0],
+        [0.0, angle_std_scaled**2],
+    ])
+    R = np.array([
+        [np.cos(angle), -np.sin(angle)],
+        [np.sin(angle), np.cos(angle)]
+    ])
+    R_inv = np.linalg.inv(R)
+    cartesian_cov = R.dot(polar_cov).dot(R_inv)
+    return cartesian_cov
 
 
 def increase_range_error(std, distance):
@@ -50,10 +83,18 @@ def compute_measurement(pose, landmark, std=MESAUREMENT_STD):
         Output: A tuple, containing the measurement (a 2D array) and the covariance (2x2 matrix).
     """
 
-    # Compute std depending on the distance to the landmark
-    std = increase_range_error(std, distance(pose, landmark))
-    # Build measurement covariance matrix
-    measurement_cov = np.eye(2) * std**2
+    l_distance = distance(pose, landmark)
+    if std == "model":
+        # New method based on calibrated model
+        l_angle = angle(pose, landmark)
+        measurement_cov = get_transformed_covariance(l_distance, l_angle)
+    else:
+        # Old method
+        # Compute std depending on the distance to the landmark
+        std = increase_range_error(std, l_distance)
+        # Build measurement covariance matrix
+        measurement_cov = np.eye(2) * std**2
+
 
     # Convert the landmark pose to a SE(3) matrix
     landmark_se3 = lie.se3(t=landmark)
@@ -62,8 +103,7 @@ def compute_measurement(pose, landmark, std=MESAUREMENT_STD):
     measurement = lie.relative_se3(pose, landmark_se3)
 
     # Add gaussian noise
-    if std > 0.0:
-        measurement[:2, 3] += np.random.multivariate_normal(np.zeros(2), measurement_cov)
+    measurement[:2, 3] += np.random.multivariate_normal(np.zeros(2), measurement_cov)
 
     return measurement, measurement_cov
 
@@ -162,7 +202,7 @@ def main():
     landmark_pose = np.array([5.0, -2.0, 0.0])
     print("origin:\n{}".format(pose))
     print("target: {}".format(landmark_pose))
-    measurement, measurement_cov = compute_measurement(pose, landmark_pose, 0.1)
+    measurement, measurement_cov = compute_measurement(pose, landmark_pose, 'model')
     print("measurement: {}".format(measurement))
     print("measurement_cov:\n{}".format(measurement_cov))
 
@@ -177,6 +217,7 @@ def main():
     landmarks = np.array([
         [-5.0, 5.0, 0.0],
         [5.0, 5.0, 0.0],
+        [5.0, 0.0, 0.0],
         [15.0, 15.2, 0.0],
         [5.0, -5.0, 0.0],
         [-5.0, -5.0, 0.0],

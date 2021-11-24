@@ -78,7 +78,7 @@ class Heatmap(object):
         y = np.zeros(N)
 
         for n in range(N):
-            measurements, measurement_covs = landmark_detection(cell_pose, filtered_landmarks, std=0.05)
+            measurements, measurement_covs = landmark_detection(cell_pose, filtered_landmarks)
             initial_guess = cell_t.copy()
             initial_guess[:2] += np.random.normal(0.0, 1.0, 2)
             initial_guess[2] += np.random.normal(0.0, 0.2)
@@ -124,7 +124,7 @@ class Heatmap(object):
             print("WARNING: Not enough landmarks in range!! Cell: {}".format(cell_t))
             return (i, j, np.inf)
 
-        measurements, measurement_covs = landmark_detection(cell_pose, filtered_landmarks, std=0.01)
+        measurements, measurement_covs = landmark_detection(cell_pose, filtered_landmarks)
 
         initial_guess = cell_t.copy()
         initial_guess[:2] += np.random.normal(0.0, 1.0, 2)

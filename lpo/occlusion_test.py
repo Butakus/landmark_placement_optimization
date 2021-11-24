@@ -8,7 +8,7 @@ from matplotlib import pyplot as plt
 import pgm
 import nlls
 import lie_algebra as lie
-from landmark_detection import landmark_detection, filter_landmarks, filter_landmarks_occlusions
+from landmark_detection import filter_landmarks, filter_landmarks_occlusions
 
 # Resolution = 4
 landmarks = np.array([

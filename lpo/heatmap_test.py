@@ -78,7 +78,7 @@ def map_gdop(map_data, map_resolution):
             # Only map the area if it is drivable
             if map_data[i, j] == 255:
                 cell_pose = lie.se3(t=[i * map_resolution, j * map_resolution, 0.0], r=lie.so3_from_rpy([0.0, 0.0, 0.0]))
-                measurements, measurement_covs = landmark_detection(cell_pose, landmarks, std=0.001)
+                measurements, measurement_covs = landmark_detection(cell_pose, landmarks)
                 try:
                     gdop_map[i][j] = metrics.compute_gdop(measurements)
                     if gdop_map[i][j] > 250.0:  # or np.isnan(gdop_map[i][j]):

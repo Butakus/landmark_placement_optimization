@@ -268,7 +268,7 @@ def test_sim_accuracy():
 def mcmc_proxy(pose, N):
     t0 = time.time()
     pose_se3 = lie.se3(t=[pose[0], pose[1], 0.0], r=lie.so3_from_rpy([0.0, 0.0, pose[2]]))
-    measurements, measurement_covs = landmark_detection(pose_se3, landmarks, std=0.01)
+    measurements, measurement_covs = landmark_detection(pose_se3, landmarks)
     nlls_result = nlls.nlls_estimation(args=(landmarks, measurements, measurement_covs),
                                   initial_guess=None, output=False)
     emcee_result = nlls.mcmc_posterior_estimation(params=nlls_result.params, steps=N,
