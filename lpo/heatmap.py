@@ -11,10 +11,11 @@ import numpy as np
 
 import nlls
 import lie_algebra as lie
-from landmark_detection import landmark_detection, filter_landmarks
+from landmark_detection import landmark_detection, filter_landmarks, filter_landmarks_occlusions
 
 NLLS_SAMPLES = 500
 N_THREADS = mp.cpu_count()
+# N_THREADS = 1
 
 
 
@@ -62,7 +63,9 @@ class Heatmap(object):
         cell_t = np.array([i * self.resolution, j * self.resolution, np.pi/2])
         cell_pose = lie.se3(t=cell_t, r=lie.so3_from_rpy([0.0, 0.0, cell_t[2]]))
         # Get the subset of landmarks that are in range from the current cell
-        filtered_landmarks = filter_landmarks(self.landmarks, cell_pose)
+        # filtered_landmarks = filter_landmarks(self.landmarks, cell_pose)
+        # filtered_landmarks = filter_landmarks_occlusions(self.landmarks, cell_pose)
+        filtered_landmarks = filter_landmarks_occlusions(self.landmarks, cell_pose, self.map_data, self.resolution)
         if filtered_landmarks.shape[0] < 3:
             # Insufficient number of landmarks in range to solve the NLLS problem
             print("WARNING: Not enough landmarks in range!! Cell: {}".format(cell_t))

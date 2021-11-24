@@ -9,7 +9,7 @@ import lie_algebra as lie
 # TODO: Find a better way to setup this
 MESAUREMENT_STD = 0.05
 
-MAX_RANGE = 60.0
+MAX_RANGE = 30.0
 # MAX_RANGE = np.inf
 
 POLE_RADIUS = 0.085
@@ -20,10 +20,10 @@ def distance(pose, landmark):
     diff = landmark - pose[:3, 3]
     return np.sqrt(diff[0]**2 + diff[1]**2 + diff[2]**2)
 
-# def distance_2d(pose, landmark):
-#     """ Compute the euclidean distance between an SE(3) pose and a landmark (2D array) """
-#     diff = landmark - pose[:2, 3]
-#     return np.sqrt(diff[0]**2 + diff[1]**2)
+def distance_2d(pose, landmark):
+    """ Compute the euclidean distance between a 2D pose and a 2D landmark (2D arrays) """
+    diff = landmark - pose
+    return np.sqrt(diff[0]**2 + diff[1]**2)
 
 
 def increase_range_error(std, distance):
@@ -78,44 +78,61 @@ def filter_landmarks(landmarks, pose, max_range=MAX_RANGE):
 
 def angle_between(angle, angle_start, alpha):
     """ Check if a given angle is in the range between [angle_start, angle_start + alpha] """
-    print("angle_between {s} - {a}".format(s=angle_start, a=alpha))
     angle_trans = (angle - angle_start) % (2*np.pi)
-    print(angle_trans <= alpha)
     return angle_trans <= alpha
 
-def filter_landmarks_occlusions(landmarks, pose, max_range=MAX_RANGE):
+def filter_landmarks_occlusions(landmarks, pose, map_data=None, map_resolution=None, max_range=MAX_RANGE):
     """ Get the subset of landmarks that can be ranged from the given pose and that are not occluded (visibility model) """
-    sorted_landmarks = []
-    # First filter and sort by distance
+    # Get all cells that create occlusions together (from map and landmarks)
+    occlusion_cells = []
+    # First add landmarks filtered by distance
     for l in range(landmarks.shape[0]):
-        l_distance = distance(pose, landmarks[l])
-        if l_distance < max_range:
-            sorted_landmarks.append((l_distance, landmarks[l]))
-    sorted_landmarks.sort(key=lambda a: a[0])
-    print("sorted_landmarks:\n{}".format(sorted_landmarks))
+        cell_distance = distance(pose, landmarks[l])
+        if cell_distance < max_range:
+            # Store distance (for sorting), landmark object and boolean to identify landmarks
+            occlusion_cells.append((cell_distance, landmarks[l], True))
+    # Then add map obstacles filtered by distance
+    if map_data is not None:
+        obstacle_cells = np.argwhere(map_data == 0)
+        for obstacle_cell in obstacle_cells:
+            obstacle_pose = np.array([
+                obstacle_cell[0] * map_resolution,
+                obstacle_cell[1] * map_resolution,
+                0.0,
+            ])
+            cell_distance = distance(pose, obstacle_pose)
+            if cell_distance < max_range:
+                # Store distance (for sorting), obstacle cell object and boolean to identify landmarks
+                occlusion_cells.append((cell_distance, obstacle_pose, False))
+
+    # Sort all occlusion cells by distance
+    occlusion_cells.sort(key=lambda a: a[0])
+
     filtered_landmarks = []
     blocked_angles = []
-    for l_distance, landmark in sorted_landmarks:
-        # Comppute landmark angle
-        print("-----------------------")
-        print("blocked_angles:\n{}".format(blocked_angles))
-        print("landmark:\n{}".format(landmark))
-        landmark_angle = np.arctan2(landmark[1], landmark[0]) % (2*np.pi)
-        print("landmark_angle:\n{}".format(landmark_angle))
-        # Check if landmark is blocked by a closer landmark and skip it
-        blocked_angle = False
-        for angle_start, alpha in blocked_angles:
-            blocked_angle = angle_between(landmark_angle, angle_start, alpha)
+    for cell_distance, occlusion_cell, is_landmark in occlusion_cells:
+        # Compute occlusion_cell angle
+        cell_angle = np.arctan2(occlusion_cell[1] - pose[1, 3], occlusion_cell[0] - pose[0, 3]) % (2*np.pi)
+        if is_landmark:
+            # Check if landmark is blocked by a closer landmark and skip it
+            blocked_angle = False
+            for angle_start, alpha in blocked_angles:
+                blocked_angle = angle_between(cell_angle, angle_start, alpha)
+                if blocked_angle:
+                    break
             if blocked_angle:
-                break
-        if blocked_angle:
-            continue
-        # Add landmark to final list
-        filtered_landmarks.append(landmark)
-        # Compute FOV of new landmark and add it to the block list
-        alpha = 2 * np.arctan2(POLE_RADIUS, l_distance)
-        angle_start = (landmark_angle - alpha/2) % (2*np.pi)
-        blocked_angles.append((angle_start, alpha))
+                continue
+            # Add landmark to final list
+            filtered_landmarks.append(occlusion_cell)
+            # Compute FOV of new landmark and add it to the block list
+            alpha = 2 * np.arctan2(POLE_RADIUS, cell_distance)
+            angle_start = (cell_angle - alpha/2) % (2*np.pi)
+            blocked_angles.append((angle_start, alpha))
+        else:
+            # Compute FOV of cell and add it to the block list
+            alpha = 2 * np.arctan2(map_resolution/2, cell_distance)
+            angle_start = (cell_angle - alpha/2) % (2*np.pi)
+            blocked_angles.append((angle_start, alpha))
 
     return np.array(filtered_landmarks)
 
@@ -163,11 +180,11 @@ def main():
         [15.0, 15.2, 0.0],
         [5.0, -5.0, 0.0],
         [-5.0, -5.0, 0.0],
-        [30.0, 0.0, 0.0],
-        [10.0, 0.0, 0.0],
+        [30.0, 1.0, 0.0],
+        [10.0, 1.0, 0.0],
     ])
     pose = lie.se3(t=[1.0, 1.0, 0.0], r=lie.so3_from_rpy([0.0, 0.0, 0.0]))
-    print("origin: {}".format(pose))
+    print("origin:\n{}".format(pose))
     print("landmarks:\n{}".format(landmarks))
     filtered_landmarks = filter_landmarks_occlusions(landmarks, pose, max_range=MAX_RANGE)
     print("filtered landmarks:\n{}".format(filtered_landmarks))

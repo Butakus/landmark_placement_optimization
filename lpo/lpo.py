@@ -4,6 +4,7 @@
 
 from time import time
 import os
+import multiprocessing as mp
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -15,6 +16,10 @@ from heatmap import Heatmap
 
 # Set numpy random seed
 np.random.seed(42)
+
+# Threads for multiprocessing modules
+N_THREADS = mp.cpu_count()
+# N_THREADS = 1
 
 LOG_FILE = "lpo_accuracy.txt"
 LANDMARKS_FILE = "landmarks.npy"
@@ -30,7 +35,7 @@ def plot_configuration(map_data, map_resolution, landmarks, heatmap=None, covera
     landmarks_display = landmarks / map_resolution
     plot_something = False
     if heatmap is not None:
-        heatmap_masked = np.ma.masked_where(map_data == 0, heatmap).transpose()
+        heatmap_masked = np.ma.masked_where(np.logical_or(map_data == 0, map_data == 100), heatmap).transpose()
         plt.figure()
         plt.imshow(map_display, cmap='gray', origin='lower')
         plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='m', s=70.0)
@@ -44,25 +49,27 @@ def plot_configuration(map_data, map_resolution, landmarks, heatmap=None, covera
         plt.legend(handles=legend_handles, fontsize=20)
         plot_something = True
     if coverage is not None:
-        coverage_masked = np.ma.masked_where(map_data == 0, coverage).transpose()
+        coverage_masked = np.ma.masked_where(np.logical_or(map_data == 0, map_data == 100), coverage).transpose()
         plt.figure()
         plt.imshow(map_display, cmap='gray', origin='lower')
-        plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='m', s=70.0)
+        plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='g', s=70.0)
+        # plt.imshow(coverage_masked, 'plasma', interpolation='none', alpha=1.0, origin='lower',
+        #            vmin=0.0, vmax=landmarks.shape[0])
         plt.imshow(coverage_masked, 'plasma', interpolation='none', alpha=1.0, origin='lower',
-                   vmin=0.0, vmax=landmarks.shape[0])
+                   vmin=0.0)
         plt.tick_params(axis='both', which='major', labelsize=16)
         cbar = plt.colorbar()
         cbar.ax.tick_params(labelsize=16)
         cbar.ax.set_ylabel('Coverage (# of landmarks)', rotation=270, fontsize=22, labelpad=25.0)
-        triangle = mlines.Line2D([], [], color='m', marker='^', linestyle='None', markersize=10, label='Landmarks')
+        triangle = mlines.Line2D([], [], color='g', marker='^', linestyle='None', markersize=10, label='Landmarks')
         legend_handles = [triangle]
         plt.legend(handles=legend_handles, fontsize=20)
         plot_something = True
     if coverage_score is not None:
-        score_map_masked = np.ma.masked_where(map_data == 0, coverage_score).transpose()
+        score_map_masked = np.ma.masked_where(np.logical_or(map_data == 0, map_data == 100), coverage_score).transpose()
         plt.figure()
         plt.imshow(map_display, cmap='gray', origin='lower')
-        plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='m')
+        plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='g')
         plt.imshow(score_map_masked, 'plasma', interpolation='none', alpha=1.0, origin='lower',
                    vmin=0.0, vmax=5.0)
         plt.colorbar()
@@ -85,19 +92,22 @@ class LPO(object):
         self.map_display = self.map_data.transpose()
         # Precompute free cells and landmark cells
         self.free_mask = self.map_data == 255
+        self.land_mask = self.map_data == 100
+        self.obstacle_mask = self.map_data == 0
         self.free_cells = np.argwhere(self.free_mask)
-        self.land_cells = np.argwhere(~self.free_mask)
-        # Precompute which free cells are in range for each land cell
-        print("Precomputing cell range...")
+        self.land_cells = np.argwhere(self.land_mask)
+        self.obstacle_cells = np.argwhere(self.obstacle_mask)
+        # Precompute which land cells are visible from each free cell
+        print("Precomputing cell visibility...")
         t0 = time()
-        self.precompute_range()
+        self.precompute_visibility()
         t1 = time()
-        print(F"Precompute range time: {t1 - t0}")
+        print(F"Precompute visibility time: {t1 - t0}")
         # Initialize heatmap builder
         self.heatmap_builder = Heatmap(map_data, map_resolution)
 
     def precompute_range(self):
-        self.range_coverage_map = np.empty(self.map_data.shape, dtype=object)
+        self.land_visibility_coverage_map = np.empty(self.map_data.shape, dtype=object)
         self.cells_in_range = np.zeros((self.map_data.shape[0],
                                         self.map_data.shape[1],
                                         self.map_data.shape[0],
@@ -105,52 +115,170 @@ class LPO(object):
                                        dtype=bool)
         for land_cell in self.land_cells:
             land_cell_idx = tuple(land_cell)
-            self.range_coverage_map[land_cell_idx] = set()
+            self.land_visibility_coverage_map[land_cell_idx] = set()
             land_cell_m = land_cell * self.map_resolution
             for free_cell in self.free_cells:
                 free_cell_idx = tuple(free_cell)
                 free_cell_m = free_cell * self.map_resolution
                 cell_range = np.sqrt((land_cell_m[0] - free_cell_m[0])**2 + (land_cell_m[1] - free_cell_m[1])**2)
                 if cell_range < landmark_detection.MAX_RANGE:
-                    self.range_coverage_map[land_cell_idx].add(free_cell_idx)
+                    self.land_visibility_coverage_map[land_cell_idx].add(free_cell_idx)
                     self.cells_in_range[land_cell_idx + free_cell_idx] = True
                     self.cells_in_range[free_cell_idx + land_cell_idx] = True
 
-    def get_coverage_map(self, landmarks):
+    def precompute_visibility(self):
+        # Compute visibility from each free cell
+        with mp.get_context("spawn").Pool(N_THREADS) as pool:
+            land_visibility_coverage_maps = pool.starmap(self.precompute_cell_visibility, self.free_cells)
+            pool.close()
+            pool.join()
+
+        # build visibility map
+        self.land_visibility_coverage_map = np.empty(self.map_data.shape, dtype=object)
+        for i, free_cell in enumerate(self.free_cells):
+            free_cell_idx = tuple(free_cell)
+            self.land_visibility_coverage_map[free_cell_idx] = land_visibility_coverage_maps[i]
+
+    def precompute_cell_visibility(self, i, j):
+        land_visibility_coverage_map = []
+        free_cell = np.array([i, j])
+        free_cell_idx = (i, j)
+        free_cell_m = free_cell * self.map_resolution
+        # print("---------------------------------------------------------")
+        # print(F"free_cell: {free_cell} / {free_cell_m}")
+        # Get all land and obstacle cells in range, and sort them by distance
+        occlusion_cells = []
+        # First add land cells filtered by distance
+        for land_cell in self.land_cells:
+            land_cell_idx = tuple(land_cell)
+            land_cell_m = land_cell * self.map_resolution
+            cell_distance = landmark_detection.distance_2d(free_cell_m, land_cell_m)
+            if cell_distance < landmark_detection.MAX_RANGE:
+                # Store distance (for sorting), cell object and boolean to identify land cells
+                occlusion_cells.append((cell_distance, land_cell_m, land_cell_idx, True))
+        # Then add map obstacles filtered by distance
+        for obstacle_cell in self.obstacle_cells:
+            obstacle_cell_idx = tuple(obstacle_cell)
+            obstacle_cell_m = obstacle_cell * self.map_resolution
+            cell_distance = landmark_detection.distance_2d(free_cell_m, obstacle_cell_m)
+            if cell_distance < landmark_detection.MAX_RANGE:
+                # Store distance (for sorting), obstacle cell object and boolean to identify land cells
+                occlusion_cells.append((cell_distance, obstacle_cell_m, obstacle_cell_idx, False))
+        # Sort all occlusion cells by distance
+        occlusion_cells.sort(key=lambda a: a[0])
+
+        blocked_angles = []
+        for cell_distance, occlusion_cell_m, occlusion_cell_idx, is_land_cell in occlusion_cells:
+            # Compute occlusion cell angle
+            # print("-----------------------")
+            # print(F"is_land_cell: {is_land_cell}")
+            # print(F"blocked_angles:\n{blocked_angles}")
+            # print(F"occlusion_cell: {occlusion_cell_idx} / {occlusion_cell_m}")
+            diff = occlusion_cell_m - free_cell_m
+            cell_angle = np.arctan2(diff[1], diff[0]) % (2*np.pi)
+            # print(F"cell_angle:\n{cell_angle}")
+            blocked_angle = False
+            if is_land_cell:
+                # Check if land cell is blocked by an obstacle and skip it
+                for angle_start, alpha in blocked_angles:
+                    blocked_angle = landmark_detection.angle_between(cell_angle, angle_start, alpha)
+                    if blocked_angle:
+                        # print("Blocked angle")
+                        break
+                if blocked_angle:
+                    continue
+                # Add land cell to final set
+                # print("Land cell added")
+                # self.land_visibility_coverage_map[free_cell_idx].append(occlusion_cell_idx)
+                land_visibility_coverage_map.append(occlusion_cell_idx)
+            else:
+                # Compute FOV of obstacle cell and add it to the block list
+                alpha = 2 * np.arctan2(self.map_resolution/2, cell_distance)
+                angle_start = (cell_angle - alpha/2) % (2*np.pi)
+                blocked_angles.append((angle_start, alpha))
+        # print(F"Visibility for cell {free_cell_idx}:\n{land_visibility_coverage_map}")
+        return land_visibility_coverage_map
+
+
+    def get_coverage_map_old(self, landmarks):
         """ Compute the coverage map, indicating how many landmarks are in range of each cell """
         coverage_map = np.zeros(self.map_data.shape)
         landmark_coords = np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int')
         for (l, landmark_cell) in enumerate(landmark_coords):
             # Check all cells in range of this landmark and increment the coverage on each one
             try:
-                for (i, j) in self.range_coverage_map[tuple(landmark_cell[:2])]:
+                for (i, j) in self.land_visibility_coverage_map[tuple(landmark_cell[:2])]:
                     coverage_map[i, j] += 1
             except Exception as e:
                 print(e)
                 print(F"landmark_coords:\n{landmark_coords}")
                 print(F"landmark_cell: {landmark_cell}")
-                print(F"range_coverage_map: {self.range_coverage_map[tuple(landmark_cell[:2])]}")
+                print(F"land_visibility_coverage_map: {self.land_visibility_coverage_map[tuple(landmark_cell[:2])]}")
         return coverage_map
 
-    # def get_coverage_map(self, landmarks):
-    #     """ Compute the coverage map, indicating how many landmarks are in range of each cell """
-    #     coverage_map = np.zeros(self.map_data.shape)
-    #     for (i, j) in self.free_cells:
-    #         cell_t = np.array([i * self.map_resolution, j * self.map_resolution, 0.0])
-    #         cell_pose = lie.se3(t=cell_t, r=lie.so3_from_rpy([0.0, 0.0, 0.0]))
-    #         for l, landmark in enumerate(landmarks):
-    #             # Check if landmark is in range
-    #             if landmark_detection.distance(cell_pose, landmark) < landmark_detection.MAX_RANGE:
-    #                 coverage_map[i, j] += 1
-    #     return coverage_map
+    def get_coverage_map(self, landmarks):
+        """ Compute the coverage map, indicating how many landmarks are in range of each cell """
+        # print("Get coverage!!!!")
+        coverage_map = np.zeros(self.map_data.shape)
+        landmark_coords = np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int')
+        # For each free cell, count the number of visible landmarks (checking occlusions)
+        for free_cell in self.free_cells:
+            # print("---------------------------------------------------------")
+            free_cell_idx = tuple(free_cell)
+            free_cell_m = free_cell * self.map_resolution
+            # print(F"free_cell: {free_cell} / {free_cell_m}")
+            # Get all visible land cells, and sort them by distance
+            landmark_cells = []
+            # print(F"Land visibility:\n{self.land_visibility_coverage_map[free_cell_idx]}")
+            # print("visible landmarks:")
+            for (l, landmark_cell) in enumerate(landmark_coords):
+                try:
+                    if tuple(landmark_cell[:2]) in self.land_visibility_coverage_map[free_cell_idx]:
+                        landmark_cell_m = landmark_cell * self.map_resolution
+                        # print(F"{landmark_cell} / {landmark_cell_m}")
+                        landmark_distance = landmark_detection.distance_2d(free_cell_m, landmark_cell_m)
+                        landmark_cells.append((landmark_distance, landmark_cell_m, landmark_cell))
+                except Exception as e:
+                    print(e)
+                    print(F"landmark_coords:\n{landmark_coords}")
+                    print(F"landmark_cell: {landmark_cell}")
+                    print(F"land_visibility_coverage_map: {self.land_visibility_coverage_map[free_cell_idx]}")
+            # print(F"visible landmarks:\n{landmark_cells}")
+
+            # Sort all occlusion cells by distance
+            landmark_cells.sort(key=lambda a: a[0])
+
+            # Check which landmarks are actually visible and compute coverage
+            blocked_angles = []
+            for landmark_distance, landmark_cell_m, landmark_cell_idx in landmark_cells:
+                # Compute landmark_cell angle
+                # print("----")
+                # print(F"blocked_angles:\n{blocked_angles}")
+                # print(F"landmark_cell_m:\n{landmark_cell_m}")
+                diff = landmark_cell_m - free_cell_m
+                landmark_angle = np.arctan2(diff[1], diff[0]) % (2*np.pi)
+                # print(F"landmark_angle:\n{landmark_angle}")
+                # Check if landmark is blocked by a closer landmark and skip it
+                blocked_angle = False
+                for angle_start, alpha in blocked_angles:
+                    blocked_angle = landmark_detection.angle_between(landmark_angle, angle_start, alpha)
+                    if blocked_angle:
+                        # print("BLOCKED")
+                        break
+                if blocked_angle:
+                    continue
+                # Increment coverage for current free cell
+                coverage_map[free_cell_idx] += 1
+                # Compute FOV of new landmark and add it to the block list
+                alpha = 2 * np.arctan2(landmark_detection.POLE_RADIUS, landmark_distance)
+                angle_start = (landmark_angle - alpha/2) % (2*np.pi)
+                blocked_angles.append((angle_start, alpha))
+        return coverage_map
+
 
     def check_coverage(self, landmarks):
         """ Get the coverage map and check if all cells have at least 3 landmarks in range """
         coverage_map = self.get_coverage_map(landmarks)
-        # for (i, j) in self.free_cells:
-        #     if coverage_map[i, j] < 3:
-        #         return False
-        # return True
         return not (coverage_map[self.free_mask] < 3).any()
 
     def valid_configuration(self, landmarks):
@@ -170,9 +298,9 @@ class LPO(object):
                landmark_cell[1] < 0 or landmark_cell[1] >= self.map_data.shape[1]:
                 print("Invalid solution: Landmark {} is out of map range!".format(landmarks[l]))
                 return False
-            # Check if landmark is in free area
-            if self.map_data[landmark_cell_idx] == 255:
-                print("Invalid solution: Landmark cell {} is free space!".format(landmark_cell))
+            # Check if landmark is in land area
+            if self.map_data[landmark_cell_idx] != 100:
+                print("Invalid solution: Landmark cell {} is not in land space!".format(landmark_cell))
                 return False
             # Check if landmark is in a cell that is already occupied by another landmark
             if occupied_cells[landmark_cell_idx]:
@@ -181,7 +309,7 @@ class LPO(object):
             occupied_cells[landmark_cell_idx] = True
         # Get the coverage map and check if all cells have at least 3 landmarks in range
         if not self.check_coverage(landmarks):
-            # print("Invalid solution: Not all cells are covered by 3 landmarks!")
+            print("Invalid solution: Not all cells are covered by 3 landmarks!")
             return False
         return True
 
@@ -249,7 +377,7 @@ class LPO(object):
                 # print("land_cell in landmarks!!!")
                 continue
             # Check cells in range of land_cell
-            for (i, j) in self.range_coverage_map[land_cell_idx]:
+            for (i, j) in self.land_visibility_coverage_map[land_cell_idx]:
                 # Add coverage score to land cell
                 if coverage_map[i, j] < 3:
                     land_score[land_cell_idx] += 3 - coverage_map[i, j]
@@ -424,7 +552,7 @@ class LPO(object):
                    new_cell[0] > 0 and new_cell[1] > 0 and \
                    new_cell[0] < self.map_data.shape[0] and \
                    new_cell[1] < self.map_data.shape[1] and \
-                   not self.free_mask[new_cell] and \
+                   self.land_mask[new_cell] and \
                    not selected_map[new_cell]:
                     legal_neighbours.append(new_cell)
         return legal_neighbours
@@ -617,7 +745,8 @@ class LPO(object):
         """ Magic """
 
         # landmarks = self.greedy_fill_coverage()
-        landmarks = self.genetic()
+
+        # landmarks = self.genetic()
 
         # landmarks = np.array([
         #     # [5.0, 40.0, 0.0],
@@ -628,6 +757,46 @@ class LPO(object):
         #     [100.0, 30.0, 0.0],
         #     [120.0, 60.0, 0.0],
         #     [125.0, 23.0, 0.0],
+        # ])
+
+        # R4
+        landmarks = np.array([
+            [0., 0., 0.],
+            [0., 32., 0.],
+            [8., 8., 0.],
+            [12., 36., 0.],
+            [16., 0., 0.],
+            [28., 8., 0.],
+            [28., 28., 0.],
+            [32., 36., 0.],
+            [36., 0., 0.],
+            [48., 32., 0.],
+            [52., 32., 0.],
+            [64., 0., 0.],
+            [76., 4., 0.],
+            [76., 16., 0.],
+            [76., 32., 0.],
+        ])
+
+        # R1 / R2
+        # landmarks = np.array([
+        #     [0., 0., 0.],
+        #     [0., 32., 0.],
+        #     [10., 12., 0.],
+        #     [12., 40., 0.],
+        #     [16., 0., 0.],
+        #     [16., 48., 0.],
+        #     [28., 12., 0.],
+        #     [28., 30., 0.],
+        #     [32., 40., 0.],
+        #     [36., 0., 0.],
+        #     [48., 36., 0.],
+        #     [52., 36., 0.],
+        #     [64., 0., 0.],
+        #     [68., 48., 0.],
+        #     [78., 4., 0.],
+        #     [78., 16., 0.],
+        #     [78., 32., 0.],
         # ])
         return landmarks
 
@@ -654,8 +823,9 @@ def main(args):
     print("Valid configuration: {}".format(valid))
 
     # Save the landmarks to a file
-    np.save(LANDMARKS_FILE, landmarks)
+    # np.save(LANDMARKS_FILE, landmarks)
 
+    # heatmap = None
     heatmap = lpo.heatmap_builder.compute_heatmap(landmarks, 'nlls')
     print("heatmap mean: {}".format(np.mean(heatmap)))
     print("heatmap max: {}".format(np.max(heatmap)))
@@ -663,7 +833,7 @@ def main(args):
         print("heatmap average: {}".format(np.average(heatmap, weights=(heatmap > 0))))
 
     coverage = lpo.get_coverage_map(landmarks)
-    print(coverage)
+    print("coverage:\n{}".format(coverage))
     print("coverage mean: {}".format(np.mean(coverage)))
     print("coverage max: {}".format(np.max(coverage)))
     if np.max(coverage) > 0.0:
@@ -671,7 +841,7 @@ def main(args):
     print("coverage fitness: {}".format(lpo.fair_coverage_fitness(coverage)))
 
     # Display the maps for the obtained landmark configuration
-    plot_configuration(map_data, RESOLUTION, landmarks, heatmap=heatmap, coverage=coverage)
+    plot_configuration(map_data, args.map_resolution, landmarks, heatmap=heatmap, coverage=coverage)
 
 
 if __name__ == '__main__':

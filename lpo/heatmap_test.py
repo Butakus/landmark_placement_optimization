@@ -32,14 +32,42 @@ from heatmap import Heatmap
 #     [140.,  55.,   0.,],
 #     [ 65.,  45.,   0.,],
 # ])
+# landmarks = np.array([
+#     [90., 25., 0.],
+#     [50., 40., 0.],
+#     [65., 25., 0.],
+#     [90., 30., 0.],
+#     [5., 50., 0.],
+#     [145., 50., 0.],
+#     [60., 40., 0.]
+# ])
+
+
+# landmarks = np.array([
+#     [10., 12., 0.],
+#     [12., 40., 0.],
+#     [28., 12., 0.],
+#     [28., 30., 0.],
+#     [44., 20., 0.],
+#     [52., 36., 0.],
+#     [54., 12., 0.],
+#     [62., 20., 0.],
+#     [78., 24., 0.],
+# ])
+
+# Resolution = 4
 landmarks = np.array([
-    [90., 25., 0.],
-    [50., 40., 0.],
-    [65., 25., 0.],
-    [90., 30., 0.],
-    [5., 50., 0.],
-    [145., 50., 0.],
-    [60., 40., 0.]
+    [0., 0., 0.],
+    [8., 12., 0.],
+    [12., 40., 0.],
+    [28., 12., 0.],
+    [28., 28., 0.],
+    [32., 40., 0.],
+    [48., 36., 0.],
+    [52., 36., 0.],
+    [64., 0., 0.],
+    [76., 12., 0.],
+    [76., 28., 0.],
 ])
 
 
@@ -83,7 +111,7 @@ def main(args):
     print("width: {}".format(width))
     print("height: {}".format(height))
     print("Map cells: {}".format(width * height))
-    print("Map free cells: {}".format(np.count_nonzero(map_data)))
+    print("Map free cells: {}".format(np.count_nonzero(map_data == 255)))
 
     # Transpose the map data matrix because imshow will treat it
     # as an image and use the first dimension as the Y axis (rows)
@@ -91,6 +119,7 @@ def main(args):
     map_display = map_data.transpose()
     # Cnvert landmarks from meters to pixel coordinates
     landmarks_display = landmarks / resolution
+    print("landmarks:\n{}".format(landmarks))
     plt.imshow(map_display, cmap='gray', origin='lower')
     plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='m')
 
@@ -113,7 +142,7 @@ def main(args):
 
     # Compute NLLS posterior:
     heatmap_gen = Heatmap(map_data, resolution)
-    heatmap = heatmap_gen.compute_heatmap(landmarks, metric='mcmc')
+    heatmap = heatmap_gen.compute_heatmap(landmarks, metric='nlls')
 
     # print(heatmap)
 
