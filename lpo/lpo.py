@@ -25,8 +25,9 @@ LOG_FILE = "lpo_accuracy.txt"
 LANDMARKS_FILE = "landmarks.npy"
 
 TARGET_ACCURACY = 0.015
-MAX_INNER_ITER = 500
-MAX_LANDMARKS = 20
+MAX_INNER_ITER = 200
+MAX_LANDMARKS = 30
+POPULATION_SIZE = 30
 
 
 def plot_configuration(map_data, map_resolution, landmarks, heatmap=None, coverage=None, coverage_score=None, no_show=False):
@@ -675,7 +676,7 @@ class LPO(object):
 
     def genetic(self):
         """ TODO: docstring """
-        self.population_size = 10
+        self.population_size = POPULATION_SIZE
 
         # Find the (theorical) minimum of required landmarks to cover the whole map area
         # Then, add 6 more (because we want to be happy)

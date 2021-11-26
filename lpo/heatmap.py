@@ -13,7 +13,7 @@ import nlls
 import lie_algebra as lie
 from landmark_detection import landmark_detection, filter_landmarks, filter_landmarks_occlusions
 
-NLLS_SAMPLES = 500
+NLLS_SAMPLES = 100
 N_THREADS = mp.cpu_count()
 # N_THREADS = 1
 
