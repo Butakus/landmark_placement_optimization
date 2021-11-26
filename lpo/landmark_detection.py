@@ -154,20 +154,17 @@ def filter_landmarks_occlusions(landmarks, pose, map_data=None, map_resolution=N
         # Compute occlusion_cell angle
         cell_angle = np.arctan2(occlusion_cell[1] - pose[1, 3], occlusion_cell[0] - pose[0, 3]) % (2*np.pi)
         if is_landmark:
-            # Check if landmark is blocked by a closer landmark and skip it
-            blocked_angle = False
+            # Check if landmark is blocked by a closer obstacle and skip it
             for angle_start, alpha in blocked_angles:
-                blocked_angle = angle_between(cell_angle, angle_start, alpha)
-                if blocked_angle:
+                if angle_between(cell_angle, angle_start, alpha):
                     break
-            if blocked_angle:
-                continue
-            # Add landmark to final list
-            filtered_landmarks.append(occlusion_cell)
-            # Compute FOV of new landmark and add it to the block list
-            alpha = 2 * np.arctan2(POLE_RADIUS, cell_distance)
-            angle_start = (cell_angle - alpha/2) % (2*np.pi)
-            blocked_angles.append((angle_start, alpha))
+            else:
+                # Landmark angle is not blocked. Add landmark to final list
+                filtered_landmarks.append(occlusion_cell)
+                # Compute FOV of new landmark and add it to the block list
+                alpha = 2 * np.arctan2(POLE_RADIUS, cell_distance)
+                angle_start = (cell_angle - alpha/2) % (2*np.pi)
+                blocked_angles.append((angle_start, alpha))
         else:
             # Compute FOV of cell and add it to the block list
             alpha = 2 * np.arctan2(map_resolution/2, cell_distance)

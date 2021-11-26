@@ -24,9 +24,9 @@ N_THREADS = mp.cpu_count()
 LOG_FILE = "lpo_accuracy.txt"
 LANDMARKS_FILE = "landmarks.npy"
 
-TARGET_ACCURACY = 0.1
+TARGET_ACCURACY = 0.015
 MAX_INNER_ITER = 500
-MAX_LANDMARKS = 15
+MAX_LANDMARKS = 20
 
 
 def plot_configuration(map_data, map_resolution, landmarks, heatmap=None, coverage=None, coverage_score=None, no_show=False):
@@ -72,7 +72,12 @@ def plot_configuration(map_data, map_resolution, landmarks, heatmap=None, covera
         plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='g')
         plt.imshow(score_map_masked, 'plasma', interpolation='none', alpha=1.0, origin='lower',
                    vmin=0.0, vmax=5.0)
-        plt.colorbar()
+        cbar = plt.colorbar()
+        cbar.ax.tick_params(labelsize=16)
+        cbar.ax.set_ylabel('Coverage fitness score', rotation=270, fontsize=22, labelpad=25.0)
+        triangle = mlines.Line2D([], [], color='g', marker='^', linestyle='None', markersize=10, label='Landmarks')
+        legend_handles = [triangle]
+        plt.legend(handles=legend_handles, fontsize=20)
         plot_something = True
     if not plot_something:
         plt.figure()
@@ -139,6 +144,17 @@ class LPO(object):
             free_cell_idx = tuple(free_cell)
             self.land_visibility_coverage_map[free_cell_idx] = land_visibility_coverage_maps[i]
 
+        # Build the inverted visibility map (from land cell to free cells)
+        self.land_visibility_coverage_map_inv = np.empty(self.map_data.shape, dtype=object)
+        for land_cell in self.land_cells:
+            land_cell_idx = tuple(land_cell)
+            self.land_visibility_coverage_map_inv[land_cell_idx] = []
+        for free_cell in self.free_cells:
+            free_cell_idx = tuple(free_cell)
+            for land_cell in self.land_visibility_coverage_map[free_cell_idx]:
+                self.land_visibility_coverage_map_inv[land_cell].append(free_cell_idx)
+
+
     def precompute_cell_visibility(self, i, j):
         land_visibility_coverage_map = []
         free_cell = np.array([i, j])
@@ -181,16 +197,13 @@ class LPO(object):
             if is_land_cell:
                 # Check if land cell is blocked by an obstacle and skip it
                 for angle_start, alpha in blocked_angles:
-                    blocked_angle = landmark_detection.angle_between(cell_angle, angle_start, alpha)
-                    if blocked_angle:
+                    if landmark_detection.angle_between(cell_angle, angle_start, alpha):
                         # print("Blocked angle")
                         break
-                if blocked_angle:
-                    continue
-                # Add land cell to final set
-                # print("Land cell added")
-                # self.land_visibility_coverage_map[free_cell_idx].append(occlusion_cell_idx)
-                land_visibility_coverage_map.append(occlusion_cell_idx)
+                else:
+                    # Add land cell to final set
+                    # print("Land cell added")
+                    land_visibility_coverage_map.append(occlusion_cell_idx)
             else:
                 # Compute FOV of obstacle cell and add it to the block list
                 alpha = 2 * np.arctan2(self.map_resolution/2, cell_distance)
@@ -259,20 +272,17 @@ class LPO(object):
                 landmark_angle = np.arctan2(diff[1], diff[0]) % (2*np.pi)
                 # print(F"landmark_angle:\n{landmark_angle}")
                 # Check if landmark is blocked by a closer landmark and skip it
-                blocked_angle = False
                 for angle_start, alpha in blocked_angles:
-                    blocked_angle = landmark_detection.angle_between(landmark_angle, angle_start, alpha)
-                    if blocked_angle:
+                    if landmark_detection.angle_between(landmark_angle, angle_start, alpha):
                         # print("BLOCKED")
                         break
-                if blocked_angle:
-                    continue
-                # Increment coverage for current free cell
-                coverage_map[free_cell_idx] += 1
-                # Compute FOV of new landmark and add it to the block list
-                alpha = 2 * np.arctan2(landmark_detection.POLE_RADIUS, landmark_distance)
-                angle_start = (landmark_angle - alpha/2) % (2*np.pi)
-                blocked_angles.append((angle_start, alpha))
+                else:
+                    # Increment coverage for current free cell
+                    coverage_map[free_cell_idx] += 1
+                    # Compute FOV of new landmark and add it to the block list
+                    alpha = 2 * np.arctan2(landmark_detection.POLE_RADIUS, landmark_distance)
+                    angle_start = (landmark_angle - alpha/2) % (2*np.pi)
+                    blocked_angles.append((angle_start, alpha))
         return coverage_map
 
 
@@ -377,30 +387,31 @@ class LPO(object):
                 # print("land_cell in landmarks!!!")
                 continue
             # Check cells in range of land_cell
-            for (i, j) in self.land_visibility_coverage_map[land_cell_idx]:
+            for (i, j) in self.land_visibility_coverage_map_inv[land_cell_idx]:
                 # Add coverage score to land cell
                 if coverage_map[i, j] < 3:
                     land_score[land_cell_idx] += 3 - coverage_map[i, j]
 
         # Hide free cells so they cannot be chosen (even if max_score is zero)
-        land_score[self.free_mask] = -1
+        land_score[self.free_mask | self.obstacle_mask] = -1
 
         # Select randomly one of the land cells with the highest scores
         max_score = np.max(land_score)
 
-        best_scores = np.argwhere(land_score >= int((1 - randomness)*max_score))
+        threshold = int((1 - randomness)*max_score) if max_score > 1 else 1
+        best_scores = np.argwhere(land_score >= threshold)
         new_landmark_cell = best_scores[np.random.choice(best_scores.shape[0])]
 
         new_landmark = np.array([new_landmark_cell[0] * self.map_resolution, new_landmark_cell[1] * self.map_resolution, 0.0])
 
         # Create a mask to dislpay the score map on top of the map and transpose for displaying
-        landmarks_display = landmarks / self.map_resolution
-        plt.imshow(self.map_display, cmap='gray', origin='lower')
-        plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='m')
-        land_score_masked = np.ma.masked_where(self.map_data == 255, land_score).transpose()
-        plt.imshow(land_score_masked, 'plasma', interpolation='none', alpha=1.0, origin='lower')
-        plt.colorbar()
-        plt.show()
+        # landmarks_display = landmarks / self.map_resolution
+        # plt.imshow(self.map_display, cmap='gray', origin='lower')
+        # plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='m')
+        # land_score_masked = np.ma.masked_where(np.logical_or(self.map_data == 0, self.map_data == 255), land_score).transpose()
+        # plt.imshow(land_score_masked, 'plasma', interpolation='none', alpha=1.0, origin='lower')
+        # plt.colorbar()
+        # plt.show()
 
         return new_landmark
 
@@ -447,7 +458,7 @@ class LPO(object):
         landmarks_display = landmarks / self.map_resolution
         plt.imshow(self.map_display, cmap='gray', origin='lower')
         plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='tab:green', s=150.0)
-        land_score_masked = np.ma.masked_where(self.map_data == 255, land_score).transpose()
+        land_score_masked = np.ma.masked_where(np.logical_or(self.map_data == 0, self.map_data == 255), land_score).transpose()
         plt.imshow(land_score_masked, 'plasma', interpolation='none', alpha=1.0, origin='lower',
                    vmin=min_score, vmax=max_score)
         cbar = plt.colorbar()
@@ -667,10 +678,10 @@ class LPO(object):
         self.population_size = 10
 
         # Find the (theorical) minimum of required landmarks to cover the whole map area
-        # Then, add 3 more (because we want to be happy)
+        # Then, add 6 more (because we want to be happy)
         map_area = self.map_data.shape[0] * self.map_data.shape[1] * self.map_resolution**2
         landmark_coverage_area = np.pi * landmark_detection.MAX_RANGE**2
-        n_landmarks = int(np.ceil(3 * (map_area / landmark_coverage_area) + 3))
+        n_landmarks = int(np.ceil(3 * (map_area / landmark_coverage_area) + 6))
         # n_landmarks = 6
 
         # Initialize population and fitness arrays
@@ -732,7 +743,7 @@ class LPO(object):
             print(F"Population after {n_landmarks} landmarks:\n{self.population}")
 
             # If we still cannot achieve the target accuracy, add another landmark based on greedy algorithm
-            # TODO: Greedy algorithm will not work once all cells have ore than 3 landmarks in range.
+            # TODO: Greedy algorithm will not work once all cells have more than 3 landmarks in range.
             #       At that point the chosen cell will be random.
             n_landmarks += 1
             new_landmarks = np.empty((self.population_size, 1, 3))
@@ -746,7 +757,7 @@ class LPO(object):
 
         # landmarks = self.greedy_fill_coverage()
 
-        # landmarks = self.genetic()
+        landmarks = self.genetic()
 
         # landmarks = np.array([
         #     # [5.0, 40.0, 0.0],
@@ -760,23 +771,23 @@ class LPO(object):
         # ])
 
         # R4
-        landmarks = np.array([
-            [0., 0., 0.],
-            [0., 32., 0.],
-            [8., 8., 0.],
-            [12., 36., 0.],
-            [16., 0., 0.],
-            [28., 8., 0.],
-            [28., 28., 0.],
-            [32., 36., 0.],
-            [36., 0., 0.],
-            [48., 32., 0.],
-            [52., 32., 0.],
-            [64., 0., 0.],
-            [76., 4., 0.],
-            [76., 16., 0.],
-            [76., 32., 0.],
-        ])
+        # landmarks = np.array([
+        #     [0., 0., 0.],
+        #     [0., 32., 0.],
+        #     [8., 8., 0.],
+        #     [12., 36., 0.],
+        #     [16., 0., 0.],
+        #     [28., 8., 0.],
+        #     [28., 28., 0.],
+        #     [32., 36., 0.],
+        #     [36., 0., 0.],
+        #     [48., 32., 0.],
+        #     [52., 32., 0.],
+        #     [64., 0., 0.],
+        #     [76., 4., 0.],
+        #     [76., 16., 0.],
+        #     [76., 32., 0.],
+        # ])
 
         # R1 / R2
         # landmarks = np.array([
