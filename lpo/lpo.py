@@ -29,6 +29,7 @@ MAX_INNER_ITER = 200
 MAX_LANDMARKS = 30
 POPULATION_SIZE = 30
 NLLS_SAMPLES = 100
+HEATMAP_PROGRESS = True
 
 
 def plot_configuration(map_data, map_resolution, landmarks, heatmap=None, coverage=None, coverage_score=None, no_show=False):
@@ -111,7 +112,7 @@ class LPO(object):
         t1 = time()
         print(F"Precompute visibility time: {t1 - t0}")
         # Initialize heatmap builder
-        self.heatmap_builder = Heatmap(map_data, map_resolution, nlls_samples=NLLS_SAMPLES, progress=False)
+        self.heatmap_builder = Heatmap(map_data, map_resolution, nlls_samples=NLLS_SAMPLES, progress=HEATMAP_PROGRESS)
 
     def precompute_range(self):
         self.land_visibility_coverage_map = np.empty(self.map_data.shape, dtype=object)
@@ -509,6 +510,7 @@ class LPO(object):
                 self.heatmaps[n] = self.heatmap_builder.compute_heatmap(self.population[n], 'nlls')
                 self.heatmap_accuracy[n, 0] = self.max_heatmap_accuracy(self.heatmaps[n])
             else:
+                self.heatmaps[n] = None
                 self.heatmap_accuracy[n, 0] = np.inf
             print(F"Heatmap accuracy: {self.heatmap_accuracy[n, 0]}")
             # Display stuff
@@ -579,29 +581,39 @@ class LPO(object):
         """ Allow population to study and exercise, so they can improve and become a better population.
             Local optimization: Landmarks are moved 1 cell to the direction that maximizes coverage.
         """
-        for n in range(self.population_size):
-            landmark_disorder = np.array(range(self.population.shape[1]))
-            np.random.shuffle(landmark_disorder)
-            landmark_coords = (self.population[n, :, :2] / self.map_resolution).astype(int)
-            for l in landmark_disorder:
-                coverage_map = self.get_coverage_map(self.population[n])
-                best_fitness = self.fair_coverage_fitness(coverage_map)
-                best_landmark = self.population[n, l].copy()
-                # Find the legal movements for this landmark
-                neighbours = self.find_legal_neighbours(landmark_coords[l], self.population[n])
-                for (i, j) in neighbours:
-                    neighbour_landmark = np.array([i * self.map_resolution, j * self.map_resolution, 0.0])
-                    # Update landmark with neighbour
-                    self.population[n, l] = neighbour_landmark
-                    # Check neighbour fitness
-                    coverage_map = self.get_coverage_map(self.population[n])
-                    neighbour_fitness = self.fair_coverage_fitness(coverage_map)
-                    # Update landmark position if neighbour has better coverage
-                    if neighbour_fitness > best_fitness:
-                        best_fitness = neighbour_fitness
-                        best_landmark = neighbour_landmark.copy()
-                self.population[n, l] = best_landmark
-            plt.show()
+        with mp.get_context("spawn").Pool(N_THREADS) as pool:
+            better_population_list = pool.map(self.back_to_school_element, list(range(self.population_size)))
+            pool.close()
+            pool.join()
+            self.population = np.array(better_population_list)
+
+    def back_to_school_element(self, n):
+        """ Allow population to study and exercise, so they can improve and become a better population.
+            Local optimization: Landmarks are moved 1 cell to the direction that maximizes coverage.
+        """
+        better_population = self.population[n]
+        landmark_disorder = np.array(range(self.population.shape[1]))
+        np.random.shuffle(landmark_disorder)
+        landmark_coords = (self.population[n, :, :2] / self.map_resolution).astype(int)
+        for l in landmark_disorder:
+            coverage_map = self.get_coverage_map(better_population)
+            best_fitness = self.fair_coverage_fitness(coverage_map)
+            best_landmark = better_population[l].copy()
+            # Find the legal movements for this landmark
+            neighbours = self.find_legal_neighbours(landmark_coords[l], better_population)
+            for (i, j) in neighbours:
+                neighbour_landmark = np.array([i * self.map_resolution, j * self.map_resolution, 0.0])
+                # Update landmark with neighbour
+                better_population[l] = neighbour_landmark
+                # Check neighbour fitness
+                coverage_map = self.get_coverage_map(better_population)
+                neighbour_fitness = self.fair_coverage_fitness(coverage_map)
+                # Update landmark position if neighbour has better coverage
+                if neighbour_fitness > best_fitness:
+                    best_fitness = neighbour_fitness
+                    best_landmark = neighbour_landmark.copy()
+            better_population[l] = best_landmark
+        return np.array(better_population)
 
     def tournament(self, winner_indices):
         """ Tournament process. Get a random subset of the population and return the best element """
