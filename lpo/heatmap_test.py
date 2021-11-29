@@ -59,12 +59,12 @@ from heatmap import Heatmap
 landmarks = np.array([
     [0., 0., 0.],
     [8., 12., 0.],
-    [12., 40., 0.],
+    [12., 36., 0.],
     [28., 12., 0.],
     [28., 28., 0.],
-    [32., 40., 0.],
-    [48., 36., 0.],
-    [52., 36., 0.],
+    [32., 36., 0.],
+    [48., 32., 0.],
+    [52., 32., 0.],
     [64., 0., 0.],
     [76., 12., 0.],
     [76., 28., 0.],
@@ -141,7 +141,7 @@ def main(args):
     # exit()
 
     # Compute NLLS posterior:
-    heatmap_gen = Heatmap(map_data, resolution)
+    heatmap_gen = Heatmap(map_data, resolution, progress=False)
     heatmap = heatmap_gen.compute_heatmap(landmarks, metric='nlls')
 
     # print(heatmap)
@@ -152,7 +152,7 @@ def main(args):
         print("heatmap average: {}".format(np.average(heatmap, weights=(heatmap > 0))))
 
     # Create a mask to dislpay the heatmap on top of the map and transpose for displaying
-    heatmap_masked = np.ma.masked_where(map_data == 0, heatmap).transpose()
+    heatmap_masked = np.ma.masked_where(np.logical_or(map_data == 0, map_data == 100), heatmap).transpose()
     plt.imshow(heatmap_masked, 'viridis', interpolation='none', alpha=1.0, origin='lower')
     plt.colorbar()
 

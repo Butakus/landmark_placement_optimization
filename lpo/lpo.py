@@ -28,6 +28,7 @@ TARGET_ACCURACY = 0.015
 MAX_INNER_ITER = 200
 MAX_LANDMARKS = 30
 POPULATION_SIZE = 30
+NLLS_SAMPLES = 100
 
 
 def plot_configuration(map_data, map_resolution, landmarks, heatmap=None, coverage=None, coverage_score=None, no_show=False):
@@ -110,7 +111,7 @@ class LPO(object):
         t1 = time()
         print(F"Precompute visibility time: {t1 - t0}")
         # Initialize heatmap builder
-        self.heatmap_builder = Heatmap(map_data, map_resolution)
+        self.heatmap_builder = Heatmap(map_data, map_resolution, nlls_samples=NLLS_SAMPLES, progress=False)
 
     def precompute_range(self):
         self.land_visibility_coverage_map = np.empty(self.map_data.shape, dtype=object)
@@ -386,6 +387,7 @@ class LPO(object):
             # Do not process land cells where we already have a landmark
             if land_cell_idx in landmark_coords:
                 # print("land_cell in landmarks!!!")
+                land_score[land_cell_idx] = -1
                 continue
             # Check cells in range of land_cell
             for (i, j) in self.land_visibility_coverage_map_inv[land_cell_idx]:
@@ -399,7 +401,7 @@ class LPO(object):
         # Select randomly one of the land cells with the highest scores
         max_score = np.max(land_score)
 
-        threshold = int((1 - randomness)*max_score) if max_score > 1 else 1
+        threshold = int((1 - randomness)*max_score)
         best_scores = np.argwhere(land_score >= threshold)
         new_landmark_cell = best_scores[np.random.choice(best_scores.shape[0])]
 
@@ -503,8 +505,12 @@ class LPO(object):
 
     def check_accuracy(self):
         for n in range(self.population_size):
-            self.heatmaps[n] = self.heatmap_builder.compute_heatmap(self.population[n], 'nlls')
-            self.heatmap_accuracy[n, 0] = self.max_heatmap_accuracy(self.heatmaps[n])
+            if self.valid_configuration(self.population[n]):
+                self.heatmaps[n] = self.heatmap_builder.compute_heatmap(self.population[n], 'nlls')
+                self.heatmap_accuracy[n, 0] = self.max_heatmap_accuracy(self.heatmaps[n])
+            else:
+                self.heatmap_accuracy[n, 0] = np.inf
+            print(F"Heatmap accuracy: {self.heatmap_accuracy[n, 0]}")
             # Display stuff
             if False:
                 self.coverage_maps[n] = self.get_coverage_map(self.population[n])
@@ -683,7 +689,6 @@ class LPO(object):
         map_area = self.map_data.shape[0] * self.map_data.shape[1] * self.map_resolution**2
         landmark_coverage_area = np.pi * landmark_detection.MAX_RANGE**2
         n_landmarks = int(np.ceil(3 * (map_area / landmark_coverage_area) + 6))
-        # n_landmarks = 6
 
         # Initialize population and fitness arrays
         self.init_population(n_landmarks)
@@ -704,6 +709,7 @@ class LPO(object):
             print(F"[Outer iter] Number of landmarks: {n_landmarks}")
             inner_iter = 0
             while inner_iter < MAX_INNER_ITER:
+                # print("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
                 print(F"[Inner iter] {inner_iter}")
                 # Inner loop.
                 #   Genetic iterations until MAX_ITER is reached or until accuracy condition is met
@@ -752,6 +758,39 @@ class LPO(object):
                 # Extend arrays to make space for an extra landmark
                 new_landmarks[n, 0] = self.find_cell_max_coverage(self.population[n], randomness=0.2)
             self.population = np.append(self.population, new_landmarks, axis=1)
+
+
+    def clean_solution(self, landmarks):
+        """ Take a final and valid solution and try to simplify it by removing unnecessary landmarks """
+        print("Cleaning solution...")
+        print(F"Landmarks:\n{landmarks}")
+
+        # Iterate over all landmarks in random order
+        landmark_disorder = np.array(range(landmarks.shape[0]))
+        np.random.shuffle(landmark_disorder)
+        for i in landmark_disorder:
+            # Remove landmark i
+            print(F"Checking landmark {landmarks[i]}...")
+            clean_landmarks = np.delete(landmarks, i, axis=0)
+            # Check if solution is valid (coverage might be lost)
+            if self.valid_configuration(clean_landmarks):
+                print("Solution is still valid")
+                # Compute heatmap and check if accuracy is in range
+                heatmap = self.heatmap_builder.compute_heatmap(clean_landmarks, 'nlls')
+                heatmap_accuracy = self.max_heatmap_accuracy(heatmap)
+                print(F"Heatmap accuracy: {heatmap_accuracy}")
+                if heatmap_accuracy < TARGET_ACCURACY:
+                    print(F"Landmark {landmarks[i]} can be removed from solution")
+                    print(F"New heatmap accuracy: {heatmap_accuracy}")
+                    return self.clean_solution(clean_landmarks)
+                else:
+                    print(F"Landmark {landmarks[i]} seems important for accuracy")
+            else:
+                print(F"Solution not valid after removing landmark {landmarks[i]}")
+        print("Current solution cannot be reduced any more")
+        return landmarks
+
+
 
     def find_landmarks(self):
         """ Magic """
@@ -810,6 +849,25 @@ class LPO(object):
         #     [78., 16., 0.],
         #     [78., 32., 0.],
         # ])
+
+        # "Valid" solution found for R4 with low NLLS samples
+        # landmarks = np.array([
+        #     [32., 36.,  0.],
+        #     [76., 12.,  0.],
+        #     [ 0., 12.,  0.],
+        #     [48., 32.,  0.],
+        #     [20., 44.,  0.],
+        #     [36., 44.,  0.],
+        #     [76., 32.,  0.],
+        #     [ 8., 12.,  0.],
+        #     [20., 36.,  0.],
+        #     [ 0., 16.,  0.],
+        #     [76., 16.,  0.],
+        #     [28.,  0.,  0.],
+        #     [56.,  0.,  0.],
+        #     [ 8.,  8.,  0.],
+        #     [12.,  0.,  0.],
+        # ])
         return landmarks
 
 
@@ -834,8 +892,11 @@ def main(args):
     valid = lpo.valid_configuration(landmarks)
     print("Valid configuration: {}".format(valid))
 
+    # Try to clean the solution and remove unnecessary landmarks
+    landmarks = lpo.clean_solution(landmarks)
+
     # Save the landmarks to a file
-    # np.save(LANDMARKS_FILE, landmarks)
+    np.save(LANDMARKS_FILE, landmarks)
 
     # heatmap = None
     heatmap = lpo.heatmap_builder.compute_heatmap(landmarks, 'nlls')

@@ -4,6 +4,7 @@
 
 from time import time
 import multiprocessing as mp
+from tqdm import tqdm
 
 import numpy as np
 # Set numpy random seed
@@ -13,16 +14,16 @@ import nlls
 import lie_algebra as lie
 from landmark_detection import landmark_detection, filter_landmarks, filter_landmarks_occlusions
 
-NLLS_SAMPLES = 100
+DEFAULT_NLLS_SAMPLES = 100
 N_THREADS = mp.cpu_count()
 # N_THREADS = 1
 
-
+pbar = None
 
 class Heatmap(object):
     """ TODO: docstring for Heatmap """
 
-    def __init__(self, map_data, resolution):
+    def __init__(self, map_data, resolution, nlls_samples=DEFAULT_NLLS_SAMPLES, progress=False):
         super(Heatmap, self).__init__()
         self.map_data = map_data
         self.resolution = resolution
@@ -33,14 +34,23 @@ class Heatmap(object):
         }
         self.results = []
         self.landmarks = None
+        self.nlls_samples = nlls_samples
+        self.progress = progress
 
     def add_async_result(self, result):
         i, j, val = result
         self.heatmap[i, j] = val
+        if self.progress:
+            pbar.update()
+
 
     def compute_heatmap(self, landmarks, metric):
+        global pbar
         self.landmarks = landmarks
         metric_f = self.metrics[metric]
+        print("Computing heatmap...")
+        if self.progress:
+            pbar = tqdm(total=np.count_nonzero(self.map_data == 255))
         t0 = time()
         with mp.get_context("spawn").Pool(N_THREADS) as pool:
             for i in range(self.map_data.shape[0]):
@@ -49,11 +59,12 @@ class Heatmap(object):
                     if self.map_data[i, j] == 255:
                         pool.apply_async(metric_f, args=(i, j), callback=self.add_async_result)
 
-            print("Computing heatmap...")
             pool.close()
             pool.join()
 
         t1 = time()
+        if self.progress:
+            pbar.close()
         print("Heatmap build time: {}".format(t1 - t0))
 
         return self.heatmap
@@ -71,13 +82,11 @@ class Heatmap(object):
             print("WARNING: Not enough landmarks in range!! Cell: {}".format(cell_t))
             return (i, j, np.inf)
 
-        # N = 10  # Take N samples to make it more robust
-        N = NLLS_SAMPLES
+        # Take multiple samples to make it more robust
+        x = np.zeros(self.nlls_samples)
+        y = np.zeros(self.nlls_samples)
 
-        x = np.zeros(N)
-        y = np.zeros(N)
-
-        for n in range(N):
+        for n in range(self.nlls_samples):
             measurements, measurement_covs = landmark_detection(cell_pose, filtered_landmarks)
             initial_guess = cell_t.copy()
             initial_guess[:2] += np.random.normal(0.0, 1.0, 2)
@@ -97,7 +106,7 @@ class Heatmap(object):
         filt_x = []
         filt_y = []
         eps = 100 * np.finfo(type(std_x)).eps
-        for n in range(N):
+        for n in range(self.nlls_samples):
             dx = abs(x[n] - cell_t[0])
             dy = abs(y[n] - cell_t[1])
             if (std_x < eps or dx <= 3*std_x) and (std_y < eps or dy <= 3*std_y):
