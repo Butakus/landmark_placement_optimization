@@ -364,7 +364,7 @@ class LPO(object):
         """
         return np.sqrt(np.sum(coverage_map**2))
 
-    def find_cell_max_coverage(self, landmarks, randomness=0.0):
+    def find_cell_max_coverage(self, landmarks, randomness=0.0, blocked_coords=[]):
         """ Find the free cell that maximizes the coverage after placing a new landmark there
             The score of each cell is determined by the amount of landmarks in range:
                 0  in range --> 3 points
@@ -382,11 +382,12 @@ class LPO(object):
 
         landmark_coords = np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int')
         landmark_coords = [tuple(c) for c in landmark_coords]
+        blocked_coords = [tuple(c) for c in blocked_coords]
 
         for land_cell in self.land_cells:
             land_cell_idx = tuple(land_cell)
             # Do not process land cells where we already have a landmark
-            if land_cell_idx in landmark_coords:
+            if land_cell_idx in landmark_coords or land_cell_idx in blocked_coords:
                 # print("land_cell in landmarks!!!")
                 land_score[land_cell_idx] = -1
                 continue
@@ -680,12 +681,7 @@ class LPO(object):
                 # Check if the landmark is mutated, or drawn from the parents pool
                 if np.random.random() < mutation_rate:
                     # Mutate landmark. Select new landmark position with greedy algorithm
-                    new_landmark = self.find_cell_max_coverage(offspring[n, :l, :], randomness=0.3)
-                    new_landmark_idx = tuple((new_landmark[:2] / self.map_resolution).astype(int))
-                    # Repeat the selection process until we get a landmark position that was not already in the pool
-                    while selected_map[new_landmark_idx]:
-                        new_landmark = self.find_cell_max_coverage(offspring[n, :l, :], randomness=0.3)
-                        new_landmark_idx = tuple((new_landmark[:2] / self.map_resolution).astype(int))
+                    new_landmark = self.find_cell_max_coverage(offspring[n, :l, :], randomness=0.3, blocked_coords=landmark_pool_coords[selected_landmarks])
                     offspring[n, l] = new_landmark
                 else:
                     # Take it from the list selected from the pool
