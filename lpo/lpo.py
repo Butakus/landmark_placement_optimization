@@ -27,8 +27,9 @@ LANDMARKS_FILE = "landmarks.npy"
 TARGET_ACCURACY = 0.015
 MAX_INNER_ITER = 200
 MAX_LANDMARKS = 30
+INIT_LANDMARKS = 8
 POPULATION_SIZE = 30
-NLLS_SAMPLES = 100
+NLLS_SAMPLES = 500
 HEATMAP_PROGRESS = True
 
 
@@ -504,6 +505,9 @@ class LPO(object):
             f.write(F"{n_landmarks},{inner_iter},"
                     F"{best_heatmap_idx},{best_heatmap},"
                     F"{best_coverage_idx},{best_coverage}\n")
+        # Save temporary set of landmarks
+        landmarks_temp_file = LANDMARKS_FILE.rstrip(".npy") + F"_{n_landmarks}_{inner_iter}.npy"
+        np.save(landmarks_temp_file, landmarks)
 
     def check_accuracy(self):
         for n in range(self.population_size):
@@ -696,7 +700,7 @@ class LPO(object):
         # Then, add 6 more (because we want to be happy)
         map_area = self.map_data.shape[0] * self.map_data.shape[1] * self.map_resolution**2
         landmark_coverage_area = np.pi * landmark_detection.MAX_RANGE**2
-        n_landmarks = int(np.ceil(3 * (map_area / landmark_coverage_area) + 6))
+        n_landmarks = int(np.ceil(3 * (map_area / landmark_coverage_area) + INIT_LANDMARKS))
 
         # Initialize population and fitness arrays
         self.init_population(n_landmarks)
@@ -927,7 +931,7 @@ def main(args):
 
 if __name__ == '__main__':
     import argparse
-    parser = argparse.ArgumentParser(description='PGM module test')
+    parser = argparse.ArgumentParser(description='Landmark Placement Optimization module')
     parser.add_argument('map_file', metavar='map_file', type=str,
                         help='Map pgm file')
     parser.add_argument('map_resolution', metavar='map_resolution', type=float,

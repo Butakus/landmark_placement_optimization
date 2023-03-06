@@ -28,27 +28,66 @@ def main(args):
     # Find a landmark setup that guarantees the desired accuracy
     lpo = LPO(map_data, args.map_resolution)
 
-    landmarks = np.load(LANDMARKS_FILE)
+    # landmarks = np.load(LANDMARKS_FILE)
+    # landmarks = np.array([
+    #     [5.0, 40.0, 0.0],
+    #     [40.0, 50.0, 0.0],
+    #     [55.0, 25.0, 0.0],
+    #     [65.0, 55.0, 0.0],
+    #     [85.0, 60.0, 0.0],
+    #     [100.0, 30.0, 0.0],
+    #     [120.0, 60.0, 0.0],
+    #     [125.0, 23.0, 0.0],
+    # ])
+
+    # 2p0
     landmarks = np.array([
-        [5.0, 40.0, 0.0],
-        [40.0, 50.0, 0.0],
-        [55.0, 25.0, 0.0],
-        [65.0, 55.0, 0.0],
-        [85.0, 60.0, 0.0],
-        [100.0, 30.0, 0.0],
-        [120.0, 60.0, 0.0],
-        [125.0, 23.0, 0.0],
+        [64.,  2.,  0.],
+        [52., 46.,  0.],
+        [32., 46.,  0.],
+        [76., 32.,  0.],
+        [ 2., 10.,  0.],
+        [44., 22.,  0.],
+        [76., 14.,  0.],
+        [32.,  2.,  0.],
+        [44., 10.,  0.],
+        [ 2., 36.,  0.],
+        [62., 14.,  0.],
+        [76., 22.,  0.],
+        [32., 40.,  0.],
+        [ 4.,  2.,  0.],
+        [52., 36.,  0.],
     ])
+    # 1p0
+    # landmarks = np.array([
+    #     [64.,  3.,  0.],
+    #     [52., 46.,  0.],
+    #     [32., 46.,  0.],
+    #     [76., 32.,  0.],
+    #     [ 3., 10.,  0.],
+    #     [44., 23.,  0.],
+    #     [76., 14.,  0.],
+    #     [32.,  3.,  0.],
+    #     [44., 10.,  0.],
+    #     [ 3., 36.,  0.],
+    #     [62., 14.,  0.],
+    #     [76., 24.,  0.],
+    #     [32., 40.,  0.],
+    #     [ 4.,  3.,  0.],
+    #     [52., 36.,  0.],
+    # ])
+    # landmarks = np.load(LANDMARKS_FILE)
+
 
     # Coverage
-    landmarks = np.array([
-        [4.0, 40.0, 0.0],
-        [40.0, 50.0, 0.0],
-        [54.0, 24.0, 0.0],
-        [64.0, 54.0, 0.0],
-        [68.0, 30.0, 0.0],
-        [124.0, 22.0, 0.0],
-    ])
+    # landmarks = np.array([
+    #     [4.0, 40.0, 0.0],
+    #     [40.0, 50.0, 0.0],
+    #     [54.0, 24.0, 0.0],
+    #     [64.0, 54.0, 0.0],
+    #     [68.0, 30.0, 0.0],
+    #     [124.0, 22.0, 0.0],
+    # ])
 
     # landmarks = np.array([
     #     [5.0, 40.0, 0.0],
@@ -86,12 +125,12 @@ def main(args):
     print("coverage fitness: {}".format(lpo.fair_coverage_fitness(coverage)))
 
     # Display the maps for the obtained landmark configuration
-    plot_configuration(map_data, landmarks, heatmap=heatmap, coverage=coverage)
+    plot_configuration(map_data, args.map_resolution, landmarks, heatmap=heatmap, coverage=coverage)
 
 
 if __name__ == '__main__':
     import argparse
-    parser = argparse.ArgumentParser(description='Plot tool to visualiza LPO results')
+    parser = argparse.ArgumentParser(description='Plot tool to visualize LPO results')
     parser.add_argument('map_file', metavar='map_file', type=str,
                         help='Map pgm file')
     parser.add_argument('map_resolution', metavar='map_resolution', type=float,

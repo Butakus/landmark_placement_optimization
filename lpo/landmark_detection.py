@@ -10,7 +10,7 @@ import lie_algebra as lie
 # MESAUREMENT_STD = 0.05
 MESAUREMENT_STD = 'model'
 
-MAX_RANGE = 30.0
+MAX_RANGE = 50.0
 # MAX_RANGE = np.inf
 
 POLE_RADIUS = 0.085
