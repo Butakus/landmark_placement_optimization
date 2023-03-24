@@ -5,6 +5,8 @@
 from time import time
 import os
 import multiprocessing as mp
+import yaml
+from pathlib import Path
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -14,23 +16,52 @@ import pgm
 import landmark_detection
 from heatmap import Heatmap
 
+# Default config parameters
+config_params = {
+    "map_file": None,
+    "map_resolution": None,
+    "random_seed": 42,  # Seed for RNG
+    "n_threads": mp.cpu_count(),    # Number of threads used
+
+    "log_file": "lpo_accuracy.txt",     # Path to log file
+    "landmarks_file": "landmarks.npy",  # Path to output file
+
+    "target_accuracy": 0.015,   # Target std accuracy
+
+    # GA params
+    "max_inner_iter": 200,    # Number of max inner iterations
+    "max_landmarks": 30,      # Max number of landmarks that can be placed
+    "init_landmarks": 8,      # Initial number of landmarks
+    "population_size": 30,    # Number of particles
+    "nlls_samples": 500,      # Number of samples to estimate the localization accuracy
+    "heatmap_progress": True, # Show a progressbar for heatmap generation
+}
+
 # Set numpy random seed
-np.random.seed(42)
+np.random.seed(config_params["random_seed"])
 
-# Threads for multiprocessing modules
-N_THREADS = mp.cpu_count()
-# N_THREADS = 1
+def read_config(config_file):
+    global config_params
+    # TODO: Check params. map_file and map_resolution must exist.
+    config_params = yaml.safe_load(Path(config_file).read_text())
 
-LOG_FILE = "lpo_accuracy.txt"
-LANDMARKS_FILE = "landmarks.npy"
+def update_args_params(args):
+    global config_params
 
-TARGET_ACCURACY = 0.015
-MAX_INNER_ITER = 200
-MAX_LANDMARKS = 30
-INIT_LANDMARKS = 8
-POPULATION_SIZE = 30
-NLLS_SAMPLES = 500
-HEATMAP_PROGRESS = True
+    config_params['map_file'] = args.map_file
+    config_params['map_resolution'] = args.map_resolution
+    if args.landmarks and not os.path.isdir(args.landmarks):
+        config_params['landmarks_file'] = args.landmarks
+    if args.log and not os.path.isdir(args.log):
+        config_params['log_file'] = args.log
+    if args.particles:
+        config_params['population_size'] = args.particles
+    if args.samples_nlls:
+        config_params['nlls_samples'] = args.samples_nlls
+    if args.target_accuracy:
+        config_params['target_accuracy'] = args.target_accuracy
+    if args.threads:
+        config_params['n_threads'] = args.threads
 
 
 def plot_configuration(map_data, map_resolution, landmarks, heatmap=None, coverage=None, coverage_score=None, no_show=False):
@@ -113,7 +144,9 @@ class LPO(object):
         t1 = time()
         print(F"Precompute visibility time: {t1 - t0}")
         # Initialize heatmap builder
-        self.heatmap_builder = Heatmap(map_data, map_resolution, nlls_samples=NLLS_SAMPLES, progress=HEATMAP_PROGRESS)
+        self.heatmap_builder = Heatmap(map_data, map_resolution,
+                                       nlls_samples=config_params['nlls_samples'],
+                                       progress=config_params['heatmap_progress'])
 
     def precompute_range(self):
         self.land_visibility_coverage_map = np.empty(self.map_data.shape, dtype=object)
@@ -137,7 +170,7 @@ class LPO(object):
 
     def precompute_visibility(self):
         # Compute visibility from each free cell
-        with mp.get_context("spawn").Pool(N_THREADS) as pool:
+        with mp.get_context("spawn").Pool(config_params['n_threads']) as pool:
             land_visibility_coverage_maps = pool.starmap(self.precompute_cell_visibility, self.free_cells)
             pool.close()
             pool.join()
@@ -501,12 +534,12 @@ class LPO(object):
         best_heatmap_idx, best_heatmap = self.get_best_heatmap()
         best_coverage_idx = np.argmax(self.coverage_fitness[:, 0])
         best_coverage = self.coverage_fitness[best_coverage_idx, 0]
-        with open(LOG_FILE, 'a') as f:
+        with open(config_params['log_file'], 'a') as f:
             f.write(F"{n_landmarks},{inner_iter},"
                     F"{best_heatmap_idx},{best_heatmap},"
                     F"{best_coverage_idx},{best_coverage}\n")
         # Save temporary set of landmarks
-        landmarks_temp_file = LANDMARKS_FILE.rstrip(".npy") + F"_{n_landmarks}_{inner_iter}.npy"
+        landmarks_temp_file = config_params['landmarks_file'].rstrip(".npy") + F"_{n_landmarks}_{inner_iter}.npy"
         np.save(landmarks_temp_file, landmarks)
 
     def check_accuracy(self):
@@ -528,7 +561,7 @@ class LPO(object):
         print(F"Heatmap fitness:\n{self.heatmap_accuracy}")
         best_heatmap_idx, best_heatmap_accuracy = self.get_best_heatmap()
         print(F"Best accuracy: {best_heatmap_accuracy}")
-        return best_heatmap_accuracy <= TARGET_ACCURACY and self.valid_configuration(self.population[best_heatmap_idx])
+        return best_heatmap_accuracy <= config_params['target_accuracy'] and self.valid_configuration(self.population[best_heatmap_idx])
 
     def init_population(self, n_landmarks):
         """ Initialize population and fitness arrays """
@@ -586,7 +619,7 @@ class LPO(object):
         """ Allow population to study and exercise, so they can improve and become a better population.
             Local optimization: Landmarks are moved 1 cell to the direction that maximizes coverage.
         """
-        with mp.get_context("spawn").Pool(N_THREADS) as pool:
+        with mp.get_context("spawn").Pool(config_params['n_threads']) as pool:
             better_population_list = pool.map(self.back_to_school_element, list(range(self.population_size)))
             pool.close()
             pool.join()
@@ -694,13 +727,13 @@ class LPO(object):
 
     def genetic(self):
         """ TODO: docstring """
-        self.population_size = POPULATION_SIZE
+        self.population_size = config_params['population_size']
 
         # Find the (theorical) minimum of required landmarks to cover the whole map area
         # Then, add 6 more (because we want to be happy)
         map_area = self.map_data.shape[0] * self.map_data.shape[1] * self.map_resolution**2
         landmark_coverage_area = np.pi * landmark_detection.MAX_RANGE**2
-        n_landmarks = int(np.ceil(3 * (map_area / landmark_coverage_area) + INIT_LANDMARKS))
+        n_landmarks = int(np.ceil(3 * (map_area / landmark_coverage_area) + config_params['init_landmarks']))
 
         # Initialize population and fitness arrays
         self.init_population(n_landmarks)
@@ -720,7 +753,7 @@ class LPO(object):
             print("#################################################################")
             print(F"[Outer iter] Number of landmarks: {n_landmarks}")
             inner_iter = 0
-            while inner_iter < MAX_INNER_ITER:
+            while inner_iter < config_params['max_inner_iter']:
                 # print("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
                 print(F"[Inner iter] {inner_iter}")
                 # Inner loop.
@@ -756,8 +789,8 @@ class LPO(object):
                     self.save_best_accuracy(n_landmarks, inner_iter)
 
             # TODO: Break point. Do this better.
-            if n_landmarks > MAX_LANDMARKS:
-                raise RuntimeError(F"Could not find a solution after {MAX_LANDMARKS} landmarks")
+            if n_landmarks > config_params['max_landmarks']:
+                raise RuntimeError(F"Could not find a solution after {config_params['max_landmarks']} landmarks")
 
             print(F"Population after {n_landmarks} landmarks:\n{self.population}")
 
@@ -791,7 +824,7 @@ class LPO(object):
                 heatmap = self.heatmap_builder.compute_heatmap(clean_landmarks, 'nlls')
                 heatmap_accuracy = self.max_heatmap_accuracy(heatmap)
                 print(F"Heatmap accuracy: {heatmap_accuracy}")
-                if heatmap_accuracy < TARGET_ACCURACY:
+                if heatmap_accuracy < config_params['target_accuracy']:
                     print(F"Landmark {landmarks[i]} can be removed from solution")
                     print(F"New heatmap accuracy: {heatmap_accuracy}")
                     return self.clean_solution(clean_landmarks)
@@ -807,9 +840,12 @@ class LPO(object):
     def find_landmarks(self):
         """ Magic """
 
-        # landmarks = self.greedy_fill_coverage()
-
         landmarks = self.genetic()
+
+        """ Below are "manual" solutions to test other features without
+            having to find the best landmarks, which is an expensive task
+        """
+        # landmarks = self.greedy_fill_coverage()
 
         # landmarks = np.array([
         #     # [5.0, 40.0, 0.0],
@@ -883,20 +919,20 @@ class LPO(object):
         return landmarks
 
 
-def main(args):
-    print(F"Log file: {LOG_FILE}")
-    print(F"Landmarks file: {LANDMARKS_FILE}")
-    map_data = pgm.read_pgm(args.map_file)
+def main():
+    print(F"Log file: {config_params['log_file']}")
+    print(F"Landmarks file: {config_params['landmarks_file']}")
+    map_data = pgm.read_pgm(config_params['map_file'])
     width, height = map_data.shape
     print(map_data)
-    print("resolution: {}".format(args.map_resolution))
+    print("resolution: {}".format(config_params['map_resolution']))
     print("width: {}".format(width))
     print("height: {}".format(height))
     print("Map cells: {}".format(width*height))
     print("Map free cells: {}".format(np.count_nonzero(map_data)))
 
     # Find a landmark setup that guarantees the desired accuracy
-    lpo = LPO(map_data, args.map_resolution)
+    lpo = LPO(map_data, config_params['map_resolution'])
 
     landmarks = lpo.find_landmarks()
     print("landmarks:\n{}".format(landmarks))
@@ -908,7 +944,7 @@ def main(args):
     landmarks = lpo.clean_solution(landmarks)
 
     # Save the landmarks to a file
-    np.save(LANDMARKS_FILE, landmarks)
+    np.save(config_params['landmarks_file'], landmarks)
 
     # heatmap = None
     heatmap = lpo.heatmap_builder.compute_heatmap(landmarks, 'nlls')
@@ -931,25 +967,46 @@ def main(args):
 
 if __name__ == '__main__':
     import argparse
-    parser = argparse.ArgumentParser(description='Landmark Placement Optimization module')
-    parser.add_argument('map_file', metavar='map_file', type=str,
-                        help='Map pgm file')
-    parser.add_argument('map_resolution', metavar='map_resolution', type=float,
-                        help='Map resolution (m/cell)')
-    parser.add_argument('-l', '--landmarks', metavar='landmarks_file', type=str,
-                        help='Path to file to save best landmarks (.npy)')
-    parser.add_argument('--log', metavar='log_file', type=str,
-                        help='Path to log file')
-    args = parser.parse_args()
+    conf_parser = argparse.ArgumentParser(
+        description='Landmark Placement Optimization module',
+        # Don't mess with format of description
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        # Turn off help, so we print all options in response to -h
+        add_help=False
+    )
+    conf_parser.add_argument("-c", "--conf_file",
+                             help="Path to configuration yaml file",
+                             type=str, metavar="config_file")
+    args, remaining_argv = conf_parser.parse_known_args()
 
-    # Change log file if needed and make path absolute
-    if args.log and not os.path.isdir(args.log):
-        LOG_FILE = args.log
-    LOG_FILE = os.path.abspath(LOG_FILE)
+    # Extract and check parameters from config file
+    if args.conf_file:
+        print(F"config_file: {args.conf_file}")
+        read_config(args.conf_file)
+    else:
+        parser = argparse.ArgumentParser(parents=[conf_parser])
+        parser.add_argument('map_file', metavar='map_file', type=str,
+                            help='Map pgm file')
+        parser.add_argument('map_resolution', metavar='map_resolution', type=float,
+                            help='Map resolution (m/cell)')
+        parser.add_argument('-l', '--landmarks', metavar='landmarks_file', type=str,
+                            help='Path to file to save best landmarks (.npy)')
+        parser.add_argument('--log', metavar='log_file', type=str,
+                            help='Path to log file')
+        parser.add_argument('-p', '--particles', metavar='population_size', type=int,
+                            help='GA number of particles')
+        parser.add_argument('-s', '--samples-nlls', metavar='samples_nlls', type=int,
+                            help='Number of samples to estimate accuracy')
+        parser.add_argument('-a', '--target-accuracy', metavar='target_accuracy', type=float,
+                            help='Target std accuracy')
+        parser.add_argument('-t', '--threads', metavar='n_threads', type=int,
+                            help='Number of threads')
 
-    # Change landmarks file if needed and make path absolute
-    if args.landmarks and not os.path.isdir(args.landmarks):
-        LANDMARKS_FILE = args.landmarks
-    LANDMARKS_FILE = os.path.abspath(LANDMARKS_FILE)
+        remaining_args = parser.parse_args(remaining_argv)
+        update_args_params(remaining_args)
 
-    main(args)
+    print("Config params:")
+    for k,v in config_params.items():
+        print(F"\t* {k}: {v}")
+
+    main()
