@@ -23,12 +23,12 @@ def main(args):
     print("width: {}".format(width))
     print("height: {}".format(height))
     print("Map cells: {}".format(width*height))
-    print("Map free cells: {}".format(np.count_nonzero(map_data)))
+    print("Map free cells: {}".format(np.count_nonzero(map_data == 255)))
 
     # Find a landmark setup that guarantees the desired accuracy
     lpo = LPO(map_data, args.map_resolution)
 
-    # landmarks = np.load(LANDMARKS_FILE)
+    landmarks = np.load(LANDMARKS_FILE)
     # landmarks = np.array([
     #     [5.0, 40.0, 0.0],
     #     [40.0, 50.0, 0.0],
@@ -41,23 +41,23 @@ def main(args):
     # ])
 
     # 2p0
-    landmarks = np.array([
-        [64.,  2.,  0.],
-        [52., 46.,  0.],
-        [32., 46.,  0.],
-        [76., 32.,  0.],
-        [ 2., 10.,  0.],
-        [44., 22.,  0.],
-        [76., 14.,  0.],
-        [32.,  2.,  0.],
-        [44., 10.,  0.],
-        [ 2., 36.,  0.],
-        [62., 14.,  0.],
-        [76., 22.,  0.],
-        [32., 40.,  0.],
-        [ 4.,  2.,  0.],
-        [52., 36.,  0.],
-    ])
+    # landmarks = np.array([
+    #     [64.,  2.,  0.],
+    #     [52., 46.,  0.],
+    #     [32., 46.,  0.],
+    #     [76., 32.,  0.],
+    #     [ 2., 10.,  0.],
+    #     [44., 22.,  0.],
+    #     [76., 14.,  0.],
+    #     [32.,  2.,  0.],
+    #     [44., 10.,  0.],
+    #     [ 2., 36.,  0.],
+    #     [62., 14.,  0.],
+    #     [76., 22.,  0.],
+    #     [32., 40.,  0.],
+    #     [ 4.,  2.,  0.],
+    #     [52., 36.,  0.],
+    # ])
     # 1p0
     # landmarks = np.array([
     #     [64.,  3.,  0.],

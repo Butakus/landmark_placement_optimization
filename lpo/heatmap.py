@@ -15,15 +15,19 @@ import lie_algebra as lie
 from landmark_detection import landmark_detection, filter_landmarks, filter_landmarks_occlusions
 
 DEFAULT_NLLS_SAMPLES = 100
-N_THREADS = mp.cpu_count()
-# N_THREADS = 1
+# Default number of threads
+DEFAULT_N_THREADS = mp.cpu_count()
+# DEFAULT_N_THREADS = 1
 
 pbar = None
 
 class Heatmap(object):
     """ TODO: docstring for Heatmap """
 
-    def __init__(self, map_data, resolution, nlls_samples=DEFAULT_NLLS_SAMPLES, progress=False):
+    def __init__(self, map_data, resolution,
+                 nlls_samples=DEFAULT_NLLS_SAMPLES,
+                 n_threads=DEFAULT_N_THREADS,
+                 progress=False):
         super(Heatmap, self).__init__()
         self.map_data = map_data
         self.resolution = resolution
@@ -35,6 +39,7 @@ class Heatmap(object):
         self.results = []
         self.landmarks = None
         self.nlls_samples = nlls_samples
+        self.n_threads = n_threads
         self.progress = progress
 
     def add_async_result(self, result):
@@ -52,7 +57,7 @@ class Heatmap(object):
         if self.progress:
             pbar = tqdm(total=np.count_nonzero(self.map_data == 255))
         t0 = time()
-        with mp.get_context("spawn").Pool(N_THREADS) as pool:
+        with mp.get_context("spawn").Pool(self.n_threads) as pool:
             for i in range(self.map_data.shape[0]):
                 for j in range(self.map_data.shape[1]):
                     # Only map the area if it is drivable

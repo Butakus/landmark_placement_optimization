@@ -274,7 +274,7 @@ def main():
     print("width: {}".format(width))
     print("height: {}".format(height))
     print("Map cells: {}".format(width*height))
-    print("Map free cells: {}".format(np.count_nonzero(map_data)))
+    print("Map free cells: {}".format(np.count_nonzero(map_data == 255)))
 
     odoms = []
     odoms_display = []

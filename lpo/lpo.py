@@ -146,6 +146,7 @@ class LPO(object):
         # Initialize heatmap builder
         self.heatmap_builder = Heatmap(map_data, map_resolution,
                                        nlls_samples=config_params['nlls_samples'],
+                                       n_threads=config_params['n_threads'],
                                        progress=config_params['heatmap_progress'])
 
     def precompute_range(self):
@@ -534,13 +535,14 @@ class LPO(object):
         best_heatmap_idx, best_heatmap = self.get_best_heatmap()
         best_coverage_idx = np.argmax(self.coverage_fitness[:, 0])
         best_coverage = self.coverage_fitness[best_coverage_idx, 0]
+        best_landmarks = self.population[best_heatmap_idx]
         with open(config_params['log_file'], 'a') as f:
             f.write(F"{n_landmarks},{inner_iter},"
                     F"{best_heatmap_idx},{best_heatmap},"
                     F"{best_coverage_idx},{best_coverage}\n")
         # Save temporary set of landmarks
         landmarks_temp_file = config_params['landmarks_file'].rstrip(".npy") + F"_{n_landmarks}_{inner_iter}.npy"
-        np.save(landmarks_temp_file, landmarks)
+        np.save(landmarks_temp_file, best_landmarks)
 
     def check_accuracy(self):
         for n in range(self.population_size):
@@ -744,6 +746,8 @@ class LPO(object):
             best_heatmap_idx, best_heatmap_accuracy = self.get_best_heatmap()
             print("Valid solution found!!")
             print(F"Valid landmarks:\n{self.population[best_heatmap_idx]}")
+            # Save to log file
+            self.save_best_accuracy(n_landmarks, 0)
             return self.population[best_heatmap_idx]
 
         while True:
@@ -929,7 +933,7 @@ def main():
     print("width: {}".format(width))
     print("height: {}".format(height))
     print("Map cells: {}".format(width*height))
-    print("Map free cells: {}".format(np.count_nonzero(map_data)))
+    print("Map free cells: {}".format(np.count_nonzero(map_data == 255)))
 
     # Find a landmark setup that guarantees the desired accuracy
     lpo = LPO(map_data, config_params['map_resolution'])
