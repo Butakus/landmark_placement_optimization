@@ -8,12 +8,14 @@ import numpy as np
 
 import pgm
 from lpo import LPO, plot_configuration
+from heatmap import Heatmap
 
 # Set numpy random seed
 np.random.seed(42)
 
 LANDMARKS_FILE = "landmarks.npy"
-
+NLLS_SAMPLES = 500
+N_THREADS = 8
 
 def main(args):
     map_data = pgm.read_pgm(args.map_file)
@@ -109,7 +111,16 @@ def main(args):
     valid = lpo.valid_configuration(landmarks)
     print("Valid configuration: {}".format(valid))
 
-    heatmap = lpo.heatmap_builder.compute_heatmap(landmarks, 'nlls')
+    # Try to clean the solution and remove unnecessary landmarks
+    if args.cleanup:
+        print("Cleaning up the solution...")
+        landmarks = lpo.clean_solution(landmarks)
+
+    heatmap_builder = Heatmap(map_data, args.map_resolution,
+                              nlls_samples=NLLS_SAMPLES,
+                              n_threads=N_THREADS,
+                              progress=True)
+    heatmap = heatmap_builder.compute_heatmap(landmarks, 'nlls')
     print("heatmap mean: {}".format(np.mean(heatmap)))
     print("heatmap max: {}".format(np.max(heatmap)))
     if np.max(heatmap) > 0.0:
@@ -137,6 +148,8 @@ if __name__ == '__main__':
                         help='Map resolution (m/cell)')
     parser.add_argument('-l', '--landmarks', metavar='landmarks_file', type=str,
                         help='Path to file to save best landmarks (.npy)')
+    parser.add_argument('-c', '--cleanup', action='store_true',
+                        help='Cleanup solution before plotting (slow)')
     args = parser.parse_args()
 
     # Change landmarks file if needed and make path absolute
