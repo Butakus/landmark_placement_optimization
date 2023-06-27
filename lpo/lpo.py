@@ -31,7 +31,7 @@ config_params = {
     # GA params
     "max_inner_iter": 200,    # Number of max inner iterations
     "max_landmarks": 30,      # Max number of landmarks that can be placed
-    "init_landmarks": 8,      # Initial number of landmarks
+    "init_num_landmarks": 8,      # Initial number of landmarks
     "population_size": 30,    # Number of particles
     "nlls_samples": 500,      # Number of samples to estimate the localization accuracy
     "heatmap_progress": True, # Show a progressbar for heatmap generation
@@ -42,8 +42,11 @@ np.random.seed(config_params["random_seed"])
 
 def read_config(config_file):
     global config_params
-    # TODO: Check params. map_file and map_resolution must exist.
     config_params = yaml.safe_load(Path(config_file).read_text())
+    # Check params. map_file and map_resolution must exist.
+    for t in ['map_file', 'map_resolution']:
+        if not t in config_params:
+            raise ValueError(F"Configuration file must include the {t} parameter!")
 
 def update_args_params(args):
     global config_params
@@ -62,6 +65,16 @@ def update_args_params(args):
         config_params['target_accuracy'] = args.target_accuracy
     if args.threads:
         config_params['n_threads'] = args.threads
+    if args.random_seed:
+        config_params['random_seed'] = args.random_seed
+    if args.max_inner_iter:
+        config_params['max_inner_iter'] = args.max_inner_iter
+    if args.max_landmarks:
+        config_params['max_landmarks'] = args.max_landmarks
+    if args.init_num_landmarks:
+        config_params['init_num_landmarks'] = args.init_num_landmarks
+    if args.heatmap_progress:
+        config_params['heatmap_progress'] = args.heatmap_progress
 
 
 def plot_configuration(map_data, map_resolution, landmarks, heatmap=None, coverage=None, coverage_score=None, no_show=False):
@@ -543,6 +556,7 @@ class LPO(object):
         # Save temporary set of landmarks
         landmarks_temp_file = config_params['landmarks_file'].rstrip(".npy") + F"_{n_landmarks}_{inner_iter}.npy"
         np.save(landmarks_temp_file, best_landmarks)
+        print(F"Temporary landmark set saved to file: {landmarks_temp_file}")
 
     def check_accuracy(self):
         for n in range(self.population_size):
@@ -731,11 +745,15 @@ class LPO(object):
         """ TODO: docstring """
         self.population_size = config_params['population_size']
 
-        # Find the (theorical) minimum of required landmarks to cover the whole map area
-        # Then, add 6 more (because we want to be happy)
-        map_area = self.map_data.shape[0] * self.map_data.shape[1] * self.map_resolution**2
-        landmark_coverage_area = np.pi * landmark_detection.MAX_RANGE**2
-        n_landmarks = int(np.ceil(3 * (map_area / landmark_coverage_area) + config_params['init_landmarks']))
+        # Initial number of landmarks can be obtained from param or from an area-based estimation by default
+        n_landmarks = 1
+        if 'init_num_landmarks' in config_params:
+            n_landmarks = int(np.ceil(3 * (map_area / landmark_coverage_area) + config_params['init_num_landmarks']))
+        else:
+            # Find the (theorical) minimum of required landmarks to cover the whole map area
+            map_area = self.map_data.shape[0] * self.map_data.shape[1] * self.map_resolution**2
+            landmark_coverage_area = np.pi * landmark_detection.MAX_RANGE**2
+            n_landmarks = int(np.ceil(3 * map_area / landmark_coverage_area))
 
         # Initialize population and fitness arrays
         self.init_population(n_landmarks)
@@ -966,7 +984,7 @@ def main():
     print("coverage fitness: {}".format(lpo.fair_coverage_fitness(coverage)))
 
     # Display the maps for the obtained landmark configuration
-    plot_configuration(map_data, args.map_resolution, landmarks, heatmap=heatmap, coverage=coverage)
+    plot_configuration(map_data, config_params['map_resolution'], landmarks, heatmap=heatmap, coverage=coverage)
 
 
 if __name__ == '__main__':
@@ -994,17 +1012,33 @@ if __name__ == '__main__':
         parser.add_argument('map_resolution', metavar='map_resolution', type=float,
                             help='Map resolution (m/cell)')
         parser.add_argument('-l', '--landmarks', metavar='landmarks_file', type=str,
-                            help='Path to file to save best landmarks (.npy)')
+                            help='Path to file to save best landmarks (.npy)',
+                            default=config_params['landmarks_file'])
         parser.add_argument('--log', metavar='log_file', type=str,
-                            help='Path to log file')
+                            help='Path to log file', default=config_params['log_file'])
         parser.add_argument('-p', '--particles', metavar='population_size', type=int,
-                            help='GA number of particles')
+                            help='GA number of particles', default=config_params['population_size'])
         parser.add_argument('-s', '--samples-nlls', metavar='samples_nlls', type=int,
-                            help='Number of samples to estimate accuracy')
+                            help='Number of samples to estimate accuracy',
+                            default=config_params['nlls_samples'])
         parser.add_argument('-a', '--target-accuracy', metavar='target_accuracy', type=float,
-                            help='Target std accuracy')
+                            help='Target std accuracy', default=config_params['target_accuracy'])
         parser.add_argument('-t', '--threads', metavar='n_threads', type=int,
-                            help='Number of threads')
+                            help='Number of threads', default=config_params['n_threads'])
+        parser.add_argument('--random-seed', metavar='random_seed', type=int,
+                            help='RNG seed', default=config_params['random_seed'])
+        parser.add_argument('--max-inner-iter', metavar='max_inner_iter', type=int,
+                            help='Max number of inner iterations',
+                            default=config_params['max_inner_iter'])
+        parser.add_argument('--max-landmarks', metavar='max_landmarks', type=int,
+                            help='Max number of landmarks to place',
+                            default=config_params['max_landmarks'])
+        parser.add_argument('--init-num-landmarks', metavar='init_num_landmarks', type=int,
+                            help='Initial number of landmarks to try',
+                            default=config_params['init_num_landmarks'])
+        parser.add_argument('--heatmap-progress', metavar='heatmap_progress', type=bool,
+                            help='Show heatmap progress bar',
+                            default=config_params['heatmap_progress'])
 
         remaining_args = parser.parse_args(remaining_argv)
         update_args_params(remaining_args)
