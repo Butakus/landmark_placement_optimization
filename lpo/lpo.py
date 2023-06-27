@@ -31,7 +31,8 @@ config_params = {
     # GA params
     "max_inner_iter": 200,    # Number of max inner iterations
     "max_landmarks": 30,      # Max number of landmarks that can be placed
-    "init_num_landmarks": 8,      # Initial number of landmarks
+    "init_fixed_landmarks": None,   # Initial landmarks (path to .npy file)
+    "init_num_landmarks": 8,  # Initial number of landmarks (in addition to init_fixed_landmarks if any)
     "population_size": 30,    # Number of particles
     "nlls_samples": 500,      # Number of samples to estimate the localization accuracy
     "heatmap_progress": True, # Show a progressbar for heatmap generation
@@ -73,6 +74,9 @@ def update_args_params(args):
         config_params['max_landmarks'] = args.max_landmarks
     if args.init_num_landmarks:
         config_params['init_num_landmarks'] = args.init_num_landmarks
+    if args.init_fixed_landmarks:
+        config_params['init_fixed_landmarks'] = args.init_fixed_landmarks
+        config_params['init_num_landmarks'] = 0 # TODO: Check if this is necessary
     if args.heatmap_progress:
         config_params['heatmap_progress'] = args.heatmap_progress
 
@@ -150,6 +154,10 @@ class LPO(object):
         self.free_cells = np.argwhere(self.free_mask)
         self.land_cells = np.argwhere(self.land_mask)
         self.obstacle_cells = np.argwhere(self.obstacle_mask)
+        # Load initial set of fixed landmarks (this set will not be modified)
+        self.fixed_landmarks = np.empty((0, 3))
+        if config_params['init_fixed_landmarks']:
+            self.fixed_landmarks = np.load(config_params['init_fixed_landmarks'])
         # Precompute which land cells are visible from each free cell
         print("Precomputing cell visibility...")
         t0 = time()
@@ -597,6 +605,7 @@ class LPO(object):
             self.heatmap_accuracy[n, 0] = np.inf
 
             # Display stuff
+            # TODO: This is not including fixed landmarks
             if False:
                 self.heatmaps[n] = self.heatmap_builder.compute_heatmap(self.population[n], 'nlls')
                 self.heatmap_accuracy[n, 0] = self.max_heatmap_accuracy(self.heatmaps[n])
@@ -747,7 +756,7 @@ class LPO(object):
 
         # Initial number of landmarks can be obtained from param or from an area-based estimation by default
         n_landmarks = 1
-        if 'init_num_landmarks' in config_params:
+        if config_params['init_num_landmarks'] > 0:
             n_landmarks = int(np.ceil(3 * (map_area / landmark_coverage_area) + config_params['init_num_landmarks']))
         else:
             # Find the (theorical) minimum of required landmarks to cover the whole map area
@@ -1036,6 +1045,8 @@ if __name__ == '__main__':
         parser.add_argument('--init-num-landmarks', metavar='init_num_landmarks', type=int,
                             help='Initial number of landmarks to try',
                             default=config_params['init_num_landmarks'])
+        parser.add_argument('--init-fixed-landmarks', metavar='init_fixed_landmarks', type=str,
+                            help='Path to file with initial set of fixed landmarks (.npy)')
         parser.add_argument('--heatmap-progress', metavar='heatmap_progress', type=bool,
                             help='Show heatmap progress bar',
                             default=config_params['heatmap_progress'])
