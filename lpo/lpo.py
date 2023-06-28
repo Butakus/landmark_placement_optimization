@@ -43,10 +43,10 @@ np.random.seed(config_params["random_seed"])
 
 def read_config(config_file):
     global config_params
-    config_params = yaml.safe_load(Path(config_file).read_text())
+    config_params.update(yaml.safe_load(Path(config_file).read_text()))
     # Check params. map_file and map_resolution must exist.
     for t in ['map_file', 'map_resolution']:
-        if not t in config_params:
+        if config_params[t] is None:
             raise ValueError(F"Configuration file must include the {t} parameter!")
 
 def update_args_params(args):
@@ -76,21 +76,22 @@ def update_args_params(args):
         config_params['init_num_landmarks'] = args.init_num_landmarks
     if args.init_fixed_landmarks:
         config_params['init_fixed_landmarks'] = args.init_fixed_landmarks
-        config_params['init_num_landmarks'] = 0 # TODO: Check if this is necessary
     if args.heatmap_progress:
         config_params['heatmap_progress'] = args.heatmap_progress
 
 
-def plot_configuration(map_data, map_resolution, landmarks, heatmap=None, coverage=None, coverage_score=None, no_show=False):
+def plot_configuration(map_data, map_resolution, landmarks, fixed_landmarks=np.empty((0, 3)), heatmap=None, coverage=None, coverage_score=None, no_show=False):
     """ Display multiple figures for the given landmark configuration """
     map_display = map_data.transpose()
     landmarks_display = landmarks / map_resolution
+    fixed_landmarks_display = fixed_landmarks / map_resolution
     plot_something = False
     if heatmap is not None:
         heatmap_masked = np.ma.masked_where(np.logical_or(map_data == 0, map_data == 100), heatmap).transpose()
         plt.figure()
         plt.imshow(map_display, cmap='gray', origin='lower')
         plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='m', s=70.0)
+        plt.scatter(fixed_landmarks_display[:, 0], fixed_landmarks_display[:, 1], marker='^', color='r', s=70.0)
         plt.imshow(heatmap_masked, 'viridis', interpolation='none', alpha=1.0, origin='lower')
         plt.tick_params(axis='both', which='major', labelsize=16)
         cbar = plt.colorbar()
@@ -105,6 +106,7 @@ def plot_configuration(map_data, map_resolution, landmarks, heatmap=None, covera
         plt.figure()
         plt.imshow(map_display, cmap='gray', origin='lower')
         plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='g', s=70.0)
+        plt.scatter(fixed_landmarks_display[:, 0], fixed_landmarks_display[:, 1], marker='^', color='r', s=70.0)
         # plt.imshow(coverage_masked, 'plasma', interpolation='none', alpha=1.0, origin='lower',
         #            vmin=0.0, vmax=landmarks.shape[0])
         plt.imshow(coverage_masked, 'plasma', interpolation='none', alpha=1.0, origin='lower',
@@ -122,6 +124,7 @@ def plot_configuration(map_data, map_resolution, landmarks, heatmap=None, covera
         plt.figure()
         plt.imshow(map_display, cmap='gray', origin='lower')
         plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='g')
+        plt.scatter(fixed_landmarks_display[:, 0], fixed_landmarks_display[:, 1], marker='^', color='r')
         plt.imshow(score_map_masked, 'plasma', interpolation='none', alpha=1.0, origin='lower',
                    vmin=0.0, vmax=5.0)
         cbar = plt.colorbar()
@@ -135,6 +138,7 @@ def plot_configuration(map_data, map_resolution, landmarks, heatmap=None, covera
         plt.figure()
         plt.imshow(map_display, cmap='gray', origin='lower')
         plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='m')
+        plt.scatter(fixed_landmarks_display[:, 0], fixed_landmarks_display[:, 1], marker='^', color='r')
     if not no_show:
         plt.show()
 
@@ -275,8 +279,11 @@ class LPO(object):
     def get_coverage_map_old(self, landmarks):
         """ Compute the coverage map, indicating how many landmarks are in range of each cell """
         coverage_map = np.zeros(self.map_data.shape)
-        landmark_coords = np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int')
-        for (l, landmark_cell) in enumerate(landmark_coords):
+        landmark_coords = np.concatenate((
+            np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int'),
+            np.floor_divide(self.fixed_landmarks[:, :2], self.map_resolution).astype('int')
+        ))
+        for landmark_cell in landmark_coords:
             # Check all cells in range of this landmark and increment the coverage on each one
             try:
                 for (i, j) in self.land_visibility_coverage_map[tuple(landmark_cell[:2])]:
@@ -292,7 +299,10 @@ class LPO(object):
         """ Compute the coverage map, indicating how many landmarks are in range of each cell """
         # print("Get coverage!!!!")
         coverage_map = np.zeros(self.map_data.shape)
-        landmark_coords = np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int')
+        landmark_coords = np.concatenate((
+            np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int'),
+            np.floor_divide(self.fixed_landmarks[:, :2], self.map_resolution).astype('int')
+        ))
         # For each free cell, count the number of visible landmarks (checking occlusions)
         for free_cell in self.free_cells:
             # print("---------------------------------------------------------")
@@ -303,7 +313,8 @@ class LPO(object):
             landmark_cells = []
             # print(F"Land visibility:\n{self.land_visibility_coverage_map[free_cell_idx]}")
             # print("visible landmarks:")
-            for (l, landmark_cell) in enumerate(landmark_coords):
+            # Include the initial fixed landmarks in the check
+            for landmark_cell in landmark_coords:
                 try:
                     if tuple(landmark_cell[:2]) in self.land_visibility_coverage_map[free_cell_idx]:
                         landmark_cell_m = landmark_cell * self.map_resolution
@@ -356,16 +367,19 @@ class LPO(object):
             - Landmarks are only in landmark-area (non-free).
             - Each non-free cell contains at most one landmark.
         """
-        # Get the cell coordinates of the landmarks
-        landmark_coords = np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int')
+        # Get the cell coordinates of the landmarks (fixed + given)
+        landmark_coords = np.concatenate((
+            np.floor_divide(self.fixed_landmarks[:, :2], self.map_resolution).astype('int'),
+            np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int')
+        ))
 
         occupied_cells = np.zeros(self.map_data.shape, dtype=bool)
-        for (l, landmark_cell) in enumerate(landmark_coords):
+        for landmark_cell in landmark_coords:
             landmark_cell_idx = tuple(landmark_cell)
             # Check if landmark is outside of map boundaries
             if landmark_cell[0] < 0 or landmark_cell[0] >= self.map_data.shape[0] or\
                landmark_cell[1] < 0 or landmark_cell[1] >= self.map_data.shape[1]:
-                print("Invalid solution: Landmark {} is out of map range!".format(landmarks[l]))
+                print("Invalid solution: Landmark {} is out of map range!".format(landmark_cell * self.map_resolution))
                 return False
             # Check if landmark is in land area
             if self.map_data[landmark_cell_idx] != 100:
@@ -436,7 +450,10 @@ class LPO(object):
         coverage_map = self.get_coverage_map(landmarks)
         land_score = np.zeros(self.map_data.shape)
 
-        landmark_coords = np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int')
+        landmark_coords = np.concatenate((
+            np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int'),
+            np.floor_divide(self.fixed_landmarks[:, :2], self.map_resolution).astype('int')
+        ))
         landmark_coords = [tuple(c) for c in landmark_coords]
         blocked_coords = [tuple(c) for c in blocked_coords]
 
@@ -488,7 +505,10 @@ class LPO(object):
         coverage_map = self.get_coverage_map(landmarks)
         land_score = np.zeros(self.map_data.shape)
 
-        landmark_coords = np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int')
+        landmark_coords = np.concatenate((
+            np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int'),
+            np.floor_divide(self.fixed_landmarks[:, :2], self.map_resolution).astype('int')
+        ))
         landmark_coords = [tuple(c) for c in landmark_coords]
         min_score = np.inf
         for land_cell in self.land_cells:
@@ -534,7 +554,7 @@ class LPO(object):
 
     def greedy_fill_coverage(self):
         """ Use a greedy algorithm that places landmarks with max coverage until all cells are covered """
-        landmarks = np.empty((0, 3))
+        landmarks = self.fixed_landmarks.copy()
         # Find the free cell that maximizes the coverage
         while not self.check_coverage(landmarks):
             new_landmark = self.find_cell_max_coverage(landmarks, randomness=0.1)
@@ -557,19 +577,26 @@ class LPO(object):
         best_coverage_idx = np.argmax(self.coverage_fitness[:, 0])
         best_coverage = self.coverage_fitness[best_coverage_idx, 0]
         best_landmarks = self.population[best_heatmap_idx]
+        best_landmarks_total = np.concatenate((self.fixed_landmarks, best_landmarks))
         with open(config_params['log_file'], 'a') as f:
             f.write(F"{n_landmarks},{inner_iter},"
                     F"{best_heatmap_idx},{best_heatmap},"
                     F"{best_coverage_idx},{best_coverage}\n")
         # Save temporary set of landmarks
         landmarks_temp_file = config_params['landmarks_file'].rstrip(".npy") + F"_{n_landmarks}_{inner_iter}.npy"
-        np.save(landmarks_temp_file, best_landmarks)
+        np.save(landmarks_temp_file, best_landmarks_total)
         print(F"Temporary landmark set saved to file: {landmarks_temp_file}")
+
+    def compute_accuracy_heatmap(self, landmarks):
+        """ Join the fixed landmarks and the given set and compute the accuracy heatmap """
+        total_landmarks = np.concatenate((self.fixed_landmarks, landmarks))
+        return self.heatmap_builder.compute_heatmap(total_landmarks, 'nlls')
 
     def check_accuracy(self):
         for n in range(self.population_size):
             if self.valid_configuration(self.population[n]):
-                self.heatmaps[n] = self.heatmap_builder.compute_heatmap(self.population[n], 'nlls')
+                # Set of initial fixed landmarks + current population
+                self.heatmaps[n] = self.compute_accuracy_heatmap(self.population[n])
                 self.heatmap_accuracy[n, 0] = self.max_heatmap_accuracy(self.heatmaps[n])
             else:
                 self.heatmaps[n] = None
@@ -580,6 +607,7 @@ class LPO(object):
                 self.coverage_maps[n] = self.get_coverage_map(self.population[n])
                 plot_configuration(self.map_data, self.map_resolution,
                                    self.population[n],
+                                   fixed_landmarks=self.fixed_landmarks,
                                    heatmap=self.heatmaps[n],
                                    coverage=self.coverage_maps[n])
         print(F"Heatmap fitness:\n{self.heatmap_accuracy}")
@@ -605,14 +633,14 @@ class LPO(object):
             self.heatmap_accuracy[n, 0] = np.inf
 
             # Display stuff
-            # TODO: This is not including fixed landmarks
             if False:
-                self.heatmaps[n] = self.heatmap_builder.compute_heatmap(self.population[n], 'nlls')
+                self.heatmaps[n] = self.compute_accuracy_heatmap(self.population[n])
                 self.heatmap_accuracy[n, 0] = self.max_heatmap_accuracy(self.heatmaps[n])
                 score_map = self.coverage_maps[n].copy()
                 score_map[self.free_mask] = 5 * np.tanh(score_map[self.free_mask] / 3)
                 plot_configuration(self.map_data, self.map_resolution,
                                    self.population[n],
+                                   fixed_landmarks=self.fixed_landmarks,
                                    heatmap=self.heatmaps[n],
                                    coverage=self.coverage_maps[n],
                                    coverage_score=score_map)
@@ -624,7 +652,11 @@ class LPO(object):
         """
         # Build a map of the other landmarks to avoid stepping on them
         selected_map = np.zeros(self.map_data.shape, dtype=bool)
-        landmark_coords = (landmarks[:, :2] / self.map_resolution).astype(int)
+
+        landmark_coords = np.concatenate((
+            np.floor_divide(self.fixed_landmarks[:, :2], self.map_resolution).astype('int'),
+            np.floor_divide(landmarks[:, :2], self.map_resolution).astype('int')
+        ))
         selected_map[tuple(landmark_coords.T)] = True
 
         legal_neighbours = []
@@ -737,8 +769,6 @@ class LPO(object):
 
         for n in range(offspring.shape[0]):
             selected_landmarks = np.random.choice(len(landmark_pool), offspring.shape[1], replace=False)
-            selected_map = np.zeros(self.map_data.shape, dtype=bool)
-            selected_map[tuple(landmark_pool_coords[selected_landmarks].T)] = True
             for l in range(offspring.shape[1]):
                 # Check if the landmark is mutated, or drawn from the parents pool
                 if np.random.random() < mutation_rate:
@@ -757,8 +787,8 @@ class LPO(object):
         # Initial number of landmarks can be obtained from param or from an area-based estimation by default
         n_landmarks = 1
         if config_params['init_num_landmarks'] > 0:
-            n_landmarks = int(np.ceil(3 * (map_area / landmark_coverage_area) + config_params['init_num_landmarks']))
-        else:
+            n_landmarks = config_params['init_num_landmarks']
+        elif config_params['init_num_landmarks'] == 0 and config_params['init_fixed_landmarks'] is None:
             # Find the (theorical) minimum of required landmarks to cover the whole map area
             map_area = self.map_data.shape[0] * self.map_data.shape[1] * self.map_resolution**2
             landmark_coverage_area = np.pi * landmark_detection.MAX_RANGE**2
@@ -772,10 +802,11 @@ class LPO(object):
         if self.check_accuracy():
             best_heatmap_idx, best_heatmap_accuracy = self.get_best_heatmap()
             print("Valid solution found!!")
-            print(F"Valid landmarks:\n{self.population[best_heatmap_idx]}")
+            total_landmarks = np.concatenate((self.fixed_landmarks, self.population[best_heatmap_idx]))
+            print(F"Valid landmarks:\n{total_landmarks}")
             # Save to log file
-            self.save_best_accuracy(n_landmarks, 0)
             return self.population[best_heatmap_idx]
+        self.save_best_accuracy(n_landmarks, 0)
 
         while True:
             # Outer loop:
@@ -809,8 +840,9 @@ class LPO(object):
 
                 inner_iter += 1
 
-                # Check heatmap accuracy every 100 iterations
-                if inner_iter % 100 == 0:
+                # Check heatmap accuracy every 100 iterations (or less if number of iterations is smaller)
+                iter_num_check = min(100, config_params['max_inner_iter'])
+                if inner_iter % iter_num_check == 0:
                     if self.check_accuracy():
                         best_heatmap_idx, best_heatmap_accuracy = self.get_best_heatmap()
                         print("Valid solution found!!")
@@ -819,11 +851,11 @@ class LPO(object):
                     # Save to file
                     self.save_best_accuracy(n_landmarks, inner_iter)
 
-            # TODO: Break point. Do this better.
+            # TODO: Break point. Do this better. Or not, it seems fine.
             if n_landmarks > config_params['max_landmarks']:
-                raise RuntimeError(F"Could not find a solution after {config_params['max_landmarks']} landmarks")
+                raise RuntimeError(F"Could not find a solution after {config_params['max_landmarks']} new landmarks")
 
-            print(F"Population after {n_landmarks} landmarks:\n{self.population}")
+            print(F"Population after {n_landmarks} new landmarks:\n{self.population}")
 
             # If we still cannot achieve the target accuracy, add another landmark based on greedy algorithm
             # TODO: Greedy algorithm will not work once all cells have more than 3 landmarks in range.
@@ -852,7 +884,7 @@ class LPO(object):
             if self.valid_configuration(clean_landmarks):
                 print("Solution is still valid")
                 # Compute heatmap and check if accuracy is in range
-                heatmap = self.heatmap_builder.compute_heatmap(clean_landmarks, 'nlls')
+                heatmap = self.compute_accuracy_heatmap(clean_landmarks)
                 heatmap_accuracy = self.max_heatmap_accuracy(heatmap)
                 print(F"Heatmap accuracy: {heatmap_accuracy}")
                 if heatmap_accuracy < config_params['target_accuracy']:
@@ -962,11 +994,23 @@ def main():
     print("Map cells: {}".format(width*height))
     print("Map free cells: {}".format(np.count_nonzero(map_data == 255)))
 
+    initial_fixed_landmarks = np.empty((0, 3))
+    if config_params['init_fixed_landmarks']:
+        print(F"Initial fixed landmarks file: {config_params['init_fixed_landmarks']}")
+        initial_fixed_landmarks = np.load(config_params['init_fixed_landmarks'])
+    print(F"Initial fixed landmarks:\n{initial_fixed_landmarks}")
+
+    # Show initial fixed landmarks
+    plot_configuration(map_data, config_params['map_resolution'],
+                       np.empty((0, 3)), fixed_landmarks=initial_fixed_landmarks)
+
     # Find a landmark setup that guarantees the desired accuracy
     lpo = LPO(map_data, config_params['map_resolution'])
 
     landmarks = lpo.find_landmarks()
+    total_landmarks = np.concatenate((initial_fixed_landmarks, landmarks))
     print("landmarks:\n{}".format(landmarks))
+    print("Total landmarks:\n{}".format(total_landmarks))
 
     valid = lpo.valid_configuration(landmarks)
     print("Valid configuration: {}".format(valid))
@@ -974,17 +1018,21 @@ def main():
     # Try to clean the solution and remove unnecessary landmarks
     landmarks = lpo.clean_solution(landmarks)
 
+    total_landmarks = np.concatenate((initial_fixed_landmarks, landmarks))
+    print("Cleaned landmarks:\n{}".format(landmarks))
+    print("Final total landmarks:\n{}".format(total_landmarks))
+
     # Save the landmarks to a file
-    np.save(config_params['landmarks_file'], landmarks)
+    np.save(config_params['landmarks_file'], total_landmarks)
 
     # heatmap = None
-    heatmap = lpo.heatmap_builder.compute_heatmap(landmarks, 'nlls')
+    heatmap = lpo.heatmap_builder.compute_heatmap(total_landmarks, 'nlls')
     print("heatmap mean: {}".format(np.mean(heatmap)))
     print("heatmap max: {}".format(np.max(heatmap)))
     if np.max(heatmap) > 0.0:
         print("heatmap average: {}".format(np.average(heatmap, weights=(heatmap > 0))))
 
-    coverage = lpo.get_coverage_map(landmarks)
+    coverage = lpo.get_coverage_map(total_landmarks)
     print("coverage:\n{}".format(coverage))
     print("coverage mean: {}".format(np.mean(coverage)))
     print("coverage max: {}".format(np.max(coverage)))
@@ -993,7 +1041,9 @@ def main():
     print("coverage fitness: {}".format(lpo.fair_coverage_fitness(coverage)))
 
     # Display the maps for the obtained landmark configuration
-    plot_configuration(map_data, config_params['map_resolution'], landmarks, heatmap=heatmap, coverage=coverage)
+    plot_configuration(map_data, config_params['map_resolution'],
+                       landmarks, fixed_landmarks=initial_fixed_landmarks,
+                       heatmap=heatmap, coverage=coverage)
 
 
 if __name__ == '__main__':
