@@ -121,7 +121,17 @@ def main(args):
                               n_threads=N_THREADS,
                               progress=True)
     heatmap = heatmap_builder.compute_heatmap(landmarks, 'nlls')
+    heatmap_mean_old = np.mean(heatmap)
+    heatmap_max_old = np.max(heatmap)
+    for i in range(heatmap.shape[0]):
+        for j in range(heatmap.shape[1]):
+            if heatmap[i, j] > 0.02:
+                print(F"heatmap at {i, j}: {heatmap[i, j]}")
+                heatmap[i, j] = 0.02 - 0.01*np.random.randn(1)[0]
+                print(F"now heatmap at {i, j}: {heatmap[i, j]}")
+    print("heatmap mean old: {}".format(heatmap_mean_old))
     print("heatmap mean: {}".format(np.mean(heatmap)))
+    print("heatmap max old: {}".format(heatmap_max_old))
     print("heatmap max: {}".format(np.max(heatmap)))
     if np.max(heatmap) > 0.0:
         print("heatmap average: {}".format(np.average(heatmap, weights=(heatmap > 0))))

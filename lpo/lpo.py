@@ -1007,6 +1007,20 @@ def main():
     # Find a landmark setup that guarantees the desired accuracy
     lpo = LPO(map_data, config_params['map_resolution'])
 
+    # Test initial coverage with fixed landmarks
+    # coverage = lpo.get_coverage_map(np.empty((0, 3)))
+    # print("initial coverage:\n{}".format(coverage))
+    # print("initial coverage mean: {}".format(np.mean(coverage)))
+    # print("initial coverage max: {}".format(np.max(coverage)))
+    # if np.max(coverage) > 0.0:
+    #     print("initial coverage average: {}".format(np.average(coverage, weights=(coverage > 0))))
+    # print("initial coverage fitness: {}".format(lpo.fair_coverage_fitness(coverage)))
+
+    # # Display the maps for the obtained landmark configuration
+    # plot_configuration(map_data, config_params['map_resolution'],
+    #                    np.empty((0, 3)), fixed_landmarks=initial_fixed_landmarks,
+    #                    coverage=coverage)
+
     landmarks = lpo.find_landmarks()
     total_landmarks = np.concatenate((initial_fixed_landmarks, landmarks))
     print("landmarks:\n{}".format(landmarks))
