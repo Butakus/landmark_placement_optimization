@@ -18,128 +18,11 @@ import nlls
 # Set numpy random seed
 np.random.seed(42)
 
-RESOLUTION = 1
-# MAP_FILE = "/home/butakus/localization_reference/gazebo/parque_maps/map_{r}p0.pgm".format(r=RESOLUTION)
-MAP_FILE = "/home/butakus/localization_reference/gazebo/map_1_{r}p0.pgm".format(r=RESOLUTION)
-RESOLUTION = float(RESOLUTION)
-# ODOM_FILES = [
-#     "/home/butakus/localization_reference/bagfiles/parque/run0_odom_filt.csv",
-#     "/home/butakus/localization_reference/bagfiles/parque/run1_odom_filt.csv",
-#     "/home/butakus/localization_reference/bagfiles/parque/run2_odom_filt.csv",
-# ]
-ODOM_FILES = [
-    "/home/butakus/localization_reference/bagfiles/scenario_2/scenario_2_run_0.csv",
-    "/home/butakus/localization_reference/bagfiles/scenario_2/scenario_2_run_1.csv",
-    "/home/butakus/localization_reference/bagfiles/scenario_2/scenario_2_run_2.csv",
-]
-NLLS_ODOM_FILES = [
-    "scenario_2_run_0_nlls_odom.npy",
-    "scenario_2_run_1_nlls_odom.npy",
-    "scenario_2_run_2_nlls_odom.npy",
-]
-DROP = 2
-
-RUN_NLLS = False
+LANDMARKS_FILE_DEFAULT = "landmarks.npy"
+DROP_DEFAULT = 2
 
 NLLS_SAMPLES = 10
-TARGET_ACCURACY = 0.015
-
-# landmarks = np.load(
-#     "/home/butakus/localization_reference/landmark_placement_optimization/logs/landmarks_5p0_1.npy"
-# )
-# landmarks = np.load(
-#     "/home/butakus/localization_reference/landmark_placement_optimization/logs/landmarks_5p0_0p05.npy"
-# )
-# Cheating to make display pretty (because landmarks were computed for 5m resolution and display is 1m)
-# for i in range(landmarks.shape[0]):
-#     if landmarks[i, 0] == 10.0:
-#         landmarks[i, 0] = 9.0
-#     if landmarks[i, 0] == 100.0 and landmarks[i, 1] == 45.0:
-#         landmarks[i, 1] = 37.0
-#     if landmarks[i, 0] == 95.0 and landmarks[i, 1] == 45.0:
-#         landmarks[i, 0] = 96.0
-#         landmarks[i, 1] = 37.0
-# landmarks = np.array([
-#     [5.0, 40.0, 0.0],
-#     [40.0, 50.0, 0.0],
-#     [55.0, 25.0, 0.0],
-#     [65.0, 55.0, 0.0],
-#     [85.0, 60.0, 0.0],
-#     [100.0, 30.0, 0.0],
-#     [120.0, 60.0, 0.0],
-#     [125.0, 23.0, 0.0],
-# ])
-# landmarks = np.array([
-#     [4.0, 40.0, 0.0],
-#     [40.0, 50.0, 0.0],
-#     [54.0, 24.0, 0.0],
-#     [64.0, 54.0, 0.0],
-#     [68.0, 30.0, 0.0],
-#     [124.0, 22.0, 0.0],
-# ])
-# landmarks = np.array([
-#     [5.0, 40.0, 0.0],
-#     [40.0, 45.0, 0.0],
-#     [55.0, 25.0, 0.0],
-#     [65.0, 55.0, 0.0],
-#     [125.0, 20.0, 0.0],
-# ])
-
-
-"""
-DROP=2 & NLLS_SAMPLES=5
-##########################
-Odom run 0
-Trans error mean:   0.002305866326346101
-Trans error std:    0.0014079795689448942
-Max Trans error:    0.013547463672799617
-Rot error mean: 0.000948191555152663
-Rot error std:  0.0008376196786161676
-Max rot error:  0.003539928945444259
-
-##########################
-Odom run 1
-Trans error mean:   0.00249141949654804
-Trans error std:    0.0017524373013097585
-Max Trans error:    0.014549625979962622
-Rot error mean: 0.0012624291374199405
-Rot error std:  0.0009463382925669817
-Max rot error:  0.004339026467921374
-
-##########################
-Odom run 2
-Trans error mean:   0.0028958762178741093
-Trans error std:    0.0018546364375405825
-Max Trans error:    0.014998836719466509
-Rot error mean: 0.005833792257481558
-Rot error std:  0.006374654710008905
-Max rot error:  0.041178056394115816
-
-"""
-
-
-# scenario 2 1p0
-landmarks = np.array([
-    [64.,  3.,  0.],
-    [52., 46.,  0.],
-    [32., 46.,  0.],
-    [76., 32.,  0.],
-    [ 3., 10.,  0.],
-    [44., 23.,  0.],
-    [76., 14.,  0.],
-    [32.,  3.,  0.],
-    [44., 10.,  0.],
-    [ 3., 36.,  0.],
-    [62., 14.,  0.],
-    [76., 24.,  0.],
-    [32., 40.,  0.],
-    [ 4.,  3.,  0.],
-    [52., 36.,  0.],
-])
-
-
-print(F"Landmarks: {landmarks}")
-
+TARGET_STD_DEFAULT = 0.01
 
 def read_odom(odom_file, drop=0):
     odom_x = []
@@ -178,7 +61,7 @@ def read_odom(odom_file, drop=0):
     return odom
 
 
-def compute_nlls_odom(odom, map_data=None, map_resolution=None):
+def compute_nlls_odom(odom, landmarks, map_data=None, map_resolution=None):
     nlls_odom = []
     for i in tqdm(range(odom.shape[0])):
         odom_se3 = lie.se3(t=[odom[i, 0], odom[i, 1], 0.0], r=lie.so3_from_rpy([0.0, 0.0, odom[i, 2]]))
@@ -234,11 +117,11 @@ def compute_nlls_odom(odom, map_data=None, map_resolution=None):
             # np.mean(theta) + np.random.normal(0.0, np.deg2rad(0.05)), # I don't know why I added this
         ])
 
-    print(np.array(nlls_odom))
+    print("Odom:\n{}".format(np.array(nlls_odom)))
     return np.array(nlls_odom)
 
 
-def get_odom_error(odom, nlls_odom):
+def get_odom_error(odom, nlls_odom, target_std=TARGET_STD_DEFAULT):
     trans_error = []
     rot_error = []
     failure_count = 0
@@ -253,10 +136,10 @@ def get_odom_error(odom, nlls_odom):
 
         # Check if error is higher than 3*max_std
         # This is 3 times the target accuracy. 99% of the data should be below this threshold.
-        if e > 3*TARGET_ACCURACY:
+        if e > 3*target_std:
             print("FAIL -> {}".format(e))
             failure_count += 1
-            if e > 6*TARGET_ACCURACY:
+            if e > 6*target_std:
                 print("SUPER FAIL -> {}".format(e))
                 # print("Dropping measurement")
                 # continue
@@ -266,15 +149,17 @@ def get_odom_error(odom, nlls_odom):
     return np.array(trans_error), np.array(rot_error)
 
 
-def main():
-    map_data = pgm.read_pgm(MAP_FILE)
+def main(args):
+    map_data = pgm.read_pgm(args.map_file)
     width, height = map_data.shape
+    landmarks = np.load(args.landmarks)
     # print(map_data)
-    print("resolution: {}".format(RESOLUTION))
-    print("width: {}".format(width))
-    print("height: {}".format(height))
-    print("Map cells: {}".format(width*height))
-    print("Map free cells: {}".format(np.count_nonzero(map_data == 255)))
+    print(F"resolution: {args.map_resolution}")
+    print(F"width: {width}")
+    print(F"height: {height}")
+    print(F"Map cells: {width*height}")
+    print(F"Map free cells: {np.count_nonzero(map_data == 255)}")
+    print(F"Landmarks:\n{landmarks}")
 
     odoms = []
     odoms_display = []
@@ -287,29 +172,46 @@ def main():
     nlls_odoms = []
     odom_trans_error = []
     odom_rot_error = []
-    for i, odom_file in enumerate(ODOM_FILES):
-        odom = read_odom(odom_file, drop=DROP)
+
+    # Check if we can skip NLLS computation
+    odom_files = args.odom
+    nlls_files = None
+    run_nlls = True
+    if args.nlls:
+        nlls_files = args.nlls
+        run_nlls = False
+        if len(nlls_files) != len(odom_files):
+            print("Error: Length of odom and nlls files mismatch")
+            exit(1)
+
+    print(F"odom_files: {odom_files}")
+    print(F"nlls_files: {nlls_files}")
+    print(F"run_nlls: {run_nlls}")
+
+    for i, odom_file in enumerate(odom_files):
+        odom = read_odom(odom_file, drop=args.drop)
         odoms.append(odom)
-        odoms_display.append(odom / RESOLUTION)
-        if RUN_NLLS:
+        odoms_display.append(odom / args.map_resolution)
+        if run_nlls:
             # file_name = os.path.basename(odom_file).rstrip('.csv').replace('odom_filt', 'nlls_odom')
+            file_dir = os.path.dirname(odom_file)
             file_name = os.path.basename(odom_file).replace('.csv', '_nlls_odom')
-            nlls_odom = compute_nlls_odom(odom, map_data=map_data, map_resolution=RESOLUTION)
-            np.save(file_name, nlls_odom)
+            file_path = os.path.join(file_dir, file_name)
+            nlls_odom = compute_nlls_odom(odom, landmarks, map_data=map_data, map_resolution=args.map_resolution)
+            print(F"Saving nlls odom file to {file_path}")
+            np.save(file_path, nlls_odom)
         else:
-            nlls_odom = np.load(NLLS_ODOM_FILES[i])
+            nlls_odom = np.load(nlls_files[i])
             print(nlls_odom)
         nlls_odoms.append(nlls_odom)
-        nlls_odoms_display.append(nlls_odom / RESOLUTION)
-        trans_error, rot_error = get_odom_error(odom, nlls_odom)
-        print(F"trans_error:\n{trans_error}")
-        print(F"rot_error:\n{rot_error}")
+        nlls_odoms_display.append(nlls_odom / args.map_resolution)
+        trans_error, rot_error = get_odom_error(odom, nlls_odom, target_std=args.target_std)
+        # print(F"trans_error:\n{trans_error}")
+        # print(F"rot_error:\n{rot_error}")
         odom_trans_error.append(trans_error)
         odom_rot_error.append(rot_error)
 
-    # exit()
-
-    for i, odom_file in enumerate(ODOM_FILES):
+    for i, odom_file in enumerate(odom_files):
         print("##########################")
         print(F"Odom run {i}")
         print(F"Trans error mean:\t{np.mean(odom_trans_error[i])}")
@@ -321,7 +223,7 @@ def main():
 
     # Display the maps for the obtained landmark configuration
     map_display = map_data.transpose()
-    landmarks_display = landmarks / RESOLUTION
+    landmarks_display = landmarks / args.map_resolution
     plt.imshow(map_display, cmap='gray', origin='lower')
     plt.scatter(landmarks_display[:, 0], landmarks_display[:, 1], marker='^', color='m', s=200)
     triangle = mlines.Line2D([], [], color='m', marker='^', linestyle='None', markersize=10, label='Landmarks')
@@ -350,11 +252,34 @@ def main():
         plt.title('Translation error CDF')
         plt.plot(sorted_error, cdf, label=F"Odom run {i}")
     # Draw vert lines for std and 3*std
-    plt.axvline(x=TARGET_ACCURACY, ls='--', color='y', ymin=0.05, ymax=0.98, label="Target std")
-    plt.axvline(x=3*TARGET_ACCURACY, ls='--', color='r', ymin=0.05, ymax=0.98, label="3 * Target std")
+    plt.axvline(x=args.target_std, ls='--', color='y', ymin=0.05, ymax=0.98, label="Target std")
+    # plt.axvline(x=3*args.target_std, ls='--', color='r', ymin=0.05, ymax=0.98, label="3 * Target std")
     plt.legend()
     plt.show()
 
 
 if __name__ == '__main__':
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(description='Tool to compare the estimated odometry with the ground truth')
+    parser.add_argument('map_file', metavar='map_file', type=str,
+                        help='Map pgm file')
+    parser.add_argument('map_resolution', metavar='map_resolution', type=float,
+                        help='Map resolution (m/cell)')
+    parser.add_argument('-l', '--landmarks', metavar='landmarks_file', type=str,
+                        default=LANDMARKS_FILE_DEFAULT,
+                        help='Path to file to save best landmarks (.npy)')
+    parser.add_argument('--odom', metavar='odom_files', nargs='+', required=True,
+                        help='Odometry ground truth files')
+    parser.add_argument('--nlls', metavar='nlls_files', nargs='+',
+                        help='NLLS localization files. Set this to avoid rerunning the NLLS algorithm.')
+    parser.add_argument('-d', '--drop', metavar='drop', type=int,
+                        default=DROP_DEFAULT,
+                        help='Read only the nth odometry measurement from the ground truth to skip frames and make it faster')
+    parser.add_argument('--target-std', type=float, default=TARGET_STD_DEFAULT,
+                        help='Target std used in this runs. Used for plotting.')
+    args = parser.parse_args()
+
+    # Make paths absolute
+    args.landmarks = os.path.abspath(args.landmarks)
+
+    main(args)

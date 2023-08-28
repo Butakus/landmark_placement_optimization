@@ -99,7 +99,7 @@ def plot_configuration(map_data, map_resolution, landmarks, fixed_landmarks=np.e
         cbar.ax.set_ylabel('Error std (m)', rotation=270, fontsize=22, labelpad=25.0)
         triangle = mlines.Line2D([], [], color='m', marker='^', linestyle='None', markersize=10, label='Landmarks')
         legend_handles = [triangle]
-        plt.legend(handles=legend_handles, fontsize=20)
+        plt.legend(handles=legend_handles, fontsize=20, loc='upper right')
         plot_something = True
     if coverage is not None:
         coverage_masked = np.ma.masked_where(np.logical_or(map_data == 0, map_data == 100), coverage).transpose()
@@ -117,7 +117,7 @@ def plot_configuration(map_data, map_resolution, landmarks, fixed_landmarks=np.e
         cbar.ax.set_ylabel('Coverage (# of landmarks)', rotation=270, fontsize=22, labelpad=25.0)
         triangle = mlines.Line2D([], [], color='g', marker='^', linestyle='None', markersize=10, label='Landmarks')
         legend_handles = [triangle]
-        plt.legend(handles=legend_handles, fontsize=20)
+        plt.legend(handles=legend_handles, fontsize=20, loc='upper right')
         plot_something = True
     if coverage_score is not None:
         score_map_masked = np.ma.masked_where(np.logical_or(map_data == 0, map_data == 100), coverage_score).transpose()

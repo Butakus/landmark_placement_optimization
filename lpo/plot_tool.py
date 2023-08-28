@@ -32,81 +32,6 @@ def main(args):
     lpo = LPO(map_data, args.map_resolution)
 
     landmarks = np.load(args.landmarks)
-    # landmarks = np.array([
-    #     [5.0, 40.0, 0.0],
-    #     [40.0, 50.0, 0.0],
-    #     [55.0, 25.0, 0.0],
-    #     [65.0, 55.0, 0.0],
-    #     [85.0, 60.0, 0.0],
-    #     [100.0, 30.0, 0.0],
-    #     [120.0, 60.0, 0.0],
-    #     [125.0, 23.0, 0.0],
-    # ])
-
-    # 2p0
-    # landmarks = np.array([
-    #     [64.,  2.,  0.],
-    #     [52., 46.,  0.],
-    #     [32., 46.,  0.],
-    #     [76., 32.,  0.],
-    #     [ 2., 10.,  0.],
-    #     [44., 22.,  0.],
-    #     [76., 14.,  0.],
-    #     [32.,  2.,  0.],
-    #     [44., 10.,  0.],
-    #     [ 2., 36.,  0.],
-    #     [62., 14.,  0.],
-    #     [76., 22.,  0.],
-    #     [32., 40.,  0.],
-    #     [ 4.,  2.,  0.],
-    #     [52., 36.,  0.],
-    # ])
-    # 1p0
-    # landmarks = np.array([
-    #     [64.,  3.,  0.],
-    #     [52., 46.,  0.],
-    #     [32., 46.,  0.],
-    #     [76., 32.,  0.],
-    #     [ 3., 10.,  0.],
-    #     [44., 23.,  0.],
-    #     [76., 14.,  0.],
-    #     [32.,  3.,  0.],
-    #     [44., 10.,  0.],
-    #     [ 3., 36.,  0.],
-    #     [62., 14.,  0.],
-    #     [76., 24.,  0.],
-    #     [32., 40.,  0.],
-    #     [ 4.,  3.,  0.],
-    #     [52., 36.,  0.],
-    # ])
-    # landmarks = np.load(LANDMARKS_FILE)
-
-
-    # Coverage
-    # landmarks = np.array([
-    #     [4.0, 40.0, 0.0],
-    #     [40.0, 50.0, 0.0],
-    #     [54.0, 24.0, 0.0],
-    #     [64.0, 54.0, 0.0],
-    #     [68.0, 30.0, 0.0],
-    #     [124.0, 22.0, 0.0],
-    # ])
-
-    # landmarks = np.array([
-    #     [5.0, 40.0, 0.0],
-    #     [40.0, 45.0, 0.0],
-    #     [55.0, 25.0, 0.0],
-    #     [65.0, 55.0, 0.0],
-    #     [125.0, 20.0, 0.0],
-    # ])
-
-    # lpo.find_cell_max_coverage(landmarks=np.empty((0, 3)))
-    # lpo.find_cell_max_coverage(landmarks=landmarks)
-
-    # lpo.find_cell_max_coverage_2(landmarks=np.empty((0, 3)))
-    # lpo.find_cell_max_coverage_2(landmarks=landmarks)
-    # exit()
-
     print("landmarks:\n{}".format(landmarks))
 
     valid = lpo.valid_configuration(landmarks)
@@ -130,19 +55,7 @@ def main(args):
         heatmap = heatmap_builder.compute_heatmap(landmarks, 'nlls')
         # Save heatmap to file
         np.save(args.heatmap_out, heatmap)
-    # Specific heatmap analysis for parking_lot case. SSomething weird with rows 3 and 4
-    heatmap_mean_old = np.mean(heatmap)
-    heatmap_max_old = np.max(heatmap)
-    for i in range(heatmap.shape[0]):
-        for j in range(heatmap.shape[1]):
-            if heatmap[i, j] > 0.02:
-                print(F"heatmap at {i, j}: {heatmap[i, j]}")
-                heatmap[i, j] = 0.02 - 0.01*np.random.randn(1)[0]
-                print(F"now heatmap at {i, j}: {heatmap[i, j]}")
-    print("heatmap mean old: {}".format(heatmap_mean_old))
-    print("heatmap mean: {}".format(np.mean(heatmap)))
-    print("heatmap max old: {}".format(heatmap_max_old))
-    print("heatmap max: {}".format(np.max(heatmap)))
+
     if np.max(heatmap) > 0.0:
         print("heatmap average: {}".format(np.average(heatmap, weights=(heatmap > 0))))
 
